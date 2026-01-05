@@ -31,12 +31,39 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Determine base path
+        id: base_path
+        run: |
+          # For project pages, use repository name
+          # For user pages (repo name ends with .github.io), use root
+          REPO_NAME="${{ github.repository }}"
+          REPO_NAME_ONLY="${REPO_NAME#*/}"
+          if [[ "$REPO_NAME_ONLY" == *.github.io ]]; then
+            BASE_PATH="/"
+          else
+            BASE_PATH="/$REPO_NAME_ONLY/"
+          fi
+          echo "BASE_PATH=$BASE_PATH" >> $GITHUB_OUTPUT
+          echo "Repository: $REPO_NAME"
+          echo "Repository name only: $REPO_NAME_ONLY"
+          echo "Base path will be: $BASE_PATH"
+
       - name: Build
         run: npm run build
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
-          VITE_BASE_PATH: '/dump_tracker/'
+          VITE_BASE_PATH: ${{ steps.base_path.outputs.BASE_PATH }}
+
+      - name: Create 404.html for SPA routing
+        run: |
+          BASE_PATH="${{ steps.base_path.outputs.BASE_PATH }}"
+          # Copy index.html to 404.html for GitHub Pages SPA support
+          cp dist/index.html dist/404.html
+          # Update the base path in 404.html if needed
+          if [ "$BASE_PATH" != "/" ]; then
+            sed -i "s|<base href=\"/\"|<base href=\"$BASE_PATH\"|g" dist/404.html
+          fi
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
