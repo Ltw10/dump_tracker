@@ -97,6 +97,53 @@ npm run build
 
 The built files will be in the `dist` directory.
 
+## Deploy to GitHub Pages
+
+This app is configured to deploy automatically to GitHub Pages using GitHub Actions.
+
+### Setup Instructions
+
+1. **Push your code to GitHub**
+   ```bash
+   git init
+   git add .
+   git commit -m "Initial commit"
+   git branch -M main
+   git remote add origin https://github.com/YOUR_USERNAME/dump_tracker.git
+   git push -u origin main
+   ```
+
+2. **Configure GitHub Secrets**
+   - Go to your repository on GitHub
+   - Navigate to Settings > Secrets and variables > Actions
+   - Add the following secrets:
+     - `VITE_SUPABASE_URL`: Your Supabase project URL
+     - `VITE_SUPABASE_ANON_KEY`: Your Supabase anon key
+
+3. **Enable GitHub Pages**
+   - Go to Settings > Pages
+   - Under "Source", select "GitHub Actions"
+   - The workflow will automatically deploy on every push to `main`
+
+4. **Update Base Path (if needed)**
+   - If your repository name is different from `dump_tracker`, update the `VITE_BASE_PATH` in `.github/workflows/deploy.yml`
+   - For user/organization pages (username.github.io), set `VITE_BASE_PATH: '/'`
+   - For project pages (username.github.io/repo-name), set `VITE_BASE_PATH: '/repo-name/'`
+
+### Manual Deployment
+
+If you prefer to deploy manually:
+
+```bash
+# Build the app
+npm run build
+
+# The dist folder contains the static files
+# You can deploy the contents of dist/ to any static hosting service
+```
+
+**Note**: For GitHub Pages, you'll need to configure the base path correctly in `vite.config.js` to match your repository structure.
+
 ## Tech Stack
 
 - **React 18** - UI framework
