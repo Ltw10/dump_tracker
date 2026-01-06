@@ -11,15 +11,32 @@ function App() {
   useEffect(() => {
     // Handle email verification callback
     const handleEmailVerification = async () => {
-      const hashParams = new URLSearchParams(window.location.hash.substring(1));
-      if (hashParams.get('type') === 'signup' && hashParams.get('access_token')) {
-        // Exchange the code for a session
-        const { data, error } = await supabase.auth.getSession();
-        if (error) {
-          console.error('Error verifying email:', error);
-        } else if (data.session) {
-          // Clear the hash from URL
-          window.history.replaceState(null, '', window.location.pathname);
+      // Check for hash fragments in URL (from email verification link)
+      if (window.location.hash) {
+        const hashParams = new URLSearchParams(window.location.hash.substring(1));
+        const accessToken = hashParams.get('access_token');
+        const refreshToken = hashParams.get('refresh_token');
+        const type = hashParams.get('type');
+
+        if ((type === 'signup' || type === 'recovery') && accessToken) {
+          try {
+            // Set the session using the tokens from the URL
+            const { data, error } = await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken || '',
+            });
+
+            if (error) {
+              console.error('Error setting session:', error);
+            } else {
+              // Clear the hash from URL
+              window.history.replaceState(null, '', window.location.pathname);
+              // Reload to ensure state is updated
+              window.location.reload();
+            }
+          } catch (err) {
+            console.error('Error during email verification:', err);
+          }
         }
       }
     };
