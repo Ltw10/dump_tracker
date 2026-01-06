@@ -410,7 +410,6 @@ function Dashboard({ user }) {
           </div>
         </div>
       )}
-      </div>
     </div>
   )
 }
