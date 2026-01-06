@@ -28,6 +28,20 @@ CREATE INDEX IF NOT EXISTS idx_dumps_user_id ON dumps(user_id);
 -- Create index on location_name for case-insensitive searches
 CREATE INDEX IF NOT EXISTS idx_dumps_location_name ON dumps(location_name);
 
+-- Create dump_entries table to track individual dump occurrences
+-- This allows us to remove the most recent dump when decrementing
+CREATE TABLE IF NOT EXISTS dump_entries (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  dump_id UUID NOT NULL REFERENCES dumps(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Create indexes on dump_entries for faster queries
+CREATE INDEX IF NOT EXISTS idx_dump_entries_dump_id ON dump_entries(dump_id);
+CREATE INDEX IF NOT EXISTS idx_dump_entries_user_id ON dump_entries(user_id);
+CREATE INDEX IF NOT EXISTS idx_dump_entries_created_at ON dump_entries(created_at DESC);
+
 -- Create function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
@@ -150,6 +164,54 @@ CREATE POLICY "Users can update own dumps"
 CREATE POLICY "Users can delete own dumps"
   ON dumps FOR DELETE
   USING (auth.uid() = user_id);
+
+-- Enable Row Level Security for dump_entries
+ALTER TABLE dump_entries ENABLE ROW LEVEL SECURITY;
+
+-- RLS Policies for dump_entries table
+CREATE POLICY "Users can view own dump entries"
+  ON dump_entries FOR SELECT
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert own dump entries"
+  ON dump_entries FOR INSERT
+  WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own dump entries"
+  ON dump_entries FOR DELETE
+  USING (auth.uid() = user_id);
+
+-- Function to sync count from entries
+CREATE OR REPLACE FUNCTION sync_dump_count()
+RETURNS TRIGGER AS $$
+BEGIN
+  -- Update the count in dumps table based on entries
+  UPDATE dumps
+  SET count = (
+    SELECT COUNT(*)
+    FROM dump_entries
+    WHERE dump_entries.dump_id = COALESCE(NEW.dump_id, OLD.dump_id)
+  ),
+  updated_at = NOW()
+  WHERE id = COALESCE(NEW.dump_id, OLD.dump_id);
+  
+  RETURN COALESCE(NEW, OLD);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Trigger to sync count when entries are added
+DROP TRIGGER IF EXISTS sync_count_on_insert ON dump_entries;
+CREATE TRIGGER sync_count_on_insert
+  AFTER INSERT ON dump_entries
+  FOR EACH ROW
+  EXECUTE FUNCTION sync_dump_count();
+
+-- Trigger to sync count when entries are deleted
+DROP TRIGGER IF EXISTS sync_count_on_delete ON dump_entries;
+CREATE TRIGGER sync_count_on_delete
+  AFTER DELETE ON dump_entries
+  FOR EACH ROW
+  EXECUTE FUNCTION sync_dump_count();
 
 -- Note: Since we're using Supabase Auth, the auth.uid() function
 -- will automatically return the authenticated user's ID.
