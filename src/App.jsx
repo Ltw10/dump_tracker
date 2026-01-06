@@ -9,6 +9,23 @@ function App() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    // Handle email verification callback
+    const handleEmailVerification = async () => {
+      const hashParams = new URLSearchParams(window.location.hash.substring(1));
+      if (hashParams.get('type') === 'signup' && hashParams.get('access_token')) {
+        // Exchange the code for a session
+        const { data, error } = await supabase.auth.getSession();
+        if (error) {
+          console.error('Error verifying email:', error);
+        } else if (data.session) {
+          // Clear the hash from URL
+          window.history.replaceState(null, '', window.location.pathname);
+        }
+      }
+    };
+
+    handleEmailVerification();
+
     // Check for existing session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null)

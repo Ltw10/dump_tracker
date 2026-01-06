@@ -30,11 +30,14 @@ function LoginForm() {
       } else {
         // Register
         // Pass first_name and last_name in metadata so the database trigger can use them
+        // Set redirectTo to current origin for email verification
+        const redirectTo = `${window.location.origin}${window.location.pathname}`;
         const { data: authData, error: authError } = await supabase.auth.signUp(
           {
             email,
             password,
             options: {
+              emailRedirectTo: redirectTo,
               data: {
                 first_name: firstName,
                 last_name: lastName,

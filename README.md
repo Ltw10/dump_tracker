@@ -33,6 +33,13 @@ npm install
    - `supabase-migration-add-ensure-user.sql` - Adds function to ensure user records exist
 5. Go to Settings > API to get your project URL and anon key
 6. Enable email authentication in Authentication > Providers > Email
+7. **Configure Redirect URLs** (Important for email verification):
+   - Go to Authentication > URL Configuration
+   - Add your site URLs to "Redirect URLs":
+     - For local development: `http://localhost:5173` (or your Vite dev port)
+     - For production: Your GitHub Pages URL (e.g., `https://username.github.io/repo-name/`)
+   - Add the same URLs to "Site URL" if deploying to production
+   - The app will automatically use the current origin, but Supabase needs these URLs whitelisted
 
 ### 3. Configure Environment Variables
 
