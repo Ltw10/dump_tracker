@@ -2,11 +2,14 @@ import { useState, useEffect } from 'react'
 import { supabase } from './supabase'
 import LoginForm from './components/LoginForm'
 import Dashboard from './components/Dashboard'
+import Settings from './components/Settings'
+import Leaderboard from './components/Leaderboard'
 import './App.css'
 
 function App() {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [currentView, setCurrentView] = useState('dashboard')
 
   useEffect(() => {
     // Handle email verification callback
@@ -69,7 +72,21 @@ function App() {
 
   return (
     <div className="app-container">
-      {user ? <Dashboard user={user} /> : <LoginForm />}
+      {user ? (
+        currentView === 'settings' ? (
+          <Settings user={user} onBack={() => setCurrentView('dashboard')} />
+        ) : currentView === 'leaderboard' ? (
+          <Leaderboard user={user} onBack={() => setCurrentView('dashboard')} />
+        ) : (
+          <Dashboard 
+            user={user} 
+            onNavigateToSettings={() => setCurrentView('settings')}
+            onNavigateToLeaderboard={() => setCurrentView('leaderboard')}
+          />
+        )
+      ) : (
+        <LoginForm />
+      )}
     </div>
   )
 }

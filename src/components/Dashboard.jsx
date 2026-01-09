@@ -2,12 +2,15 @@ import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import './Dashboard.css'
 
-function Dashboard({ user }) {
+function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard }) {
   const [locations, setLocations] = useState([])
   const [newLocation, setNewLocation] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [selectedLocation, setSelectedLocation] = useState(null)
+  const [showGhostWipeModal, setShowGhostWipeModal] = useState(false)
+  const [pendingDumpId, setPendingDumpId] = useState(null)
+  const [pendingLocationName, setPendingLocationName] = useState('')
 
   useEffect(() => {
     ensureUserExists()
@@ -81,74 +84,28 @@ function Dashboard({ user }) {
         .single()
 
       if (existing) {
-        // Create a new dump entry for existing location
-        const { error: entryError } = await supabase
-          .from('dump_entries')
-          .insert({
-            dump_id: existing.id,
-            user_id: user.id,
-          })
-
-        if (entryError) {
-          // Fallback to old method if dump_entries table doesn't exist yet
-          const { data, error } = await supabase
-            .from('dumps')
-            .update({
-              count: existing.count + 1,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', existing.id)
-            .select()
-            .single()
-
-          if (error) throw error
-
-          setLocations((prev) => {
-            const updated = prev.map((loc) => (loc.id === existing.id ? data : loc))
-            return updated.sort((a, b) => b.count - a.count)
-          })
-          return
-        }
-
-        // Fetch updated location after entry is created
-        const { data, error } = await supabase
-          .from('dumps')
-          .select('*')
-          .eq('id', existing.id)
-          .single()
-
-        if (error) throw error
-
-        setLocations((prev) => {
-          const updated = prev.map((loc) => (loc.id === existing.id ? data : loc))
-          return updated.sort((a, b) => b.count - a.count)
-        })
+        // Show modal first - don't create entry yet
+        setPendingDumpId(existing.id)
+        setPendingLocationName(locationName)
+        setShowGhostWipeModal(true)
       } else {
-        // Create new location
+        // Create new location (but don't create entry yet)
         const { data: newDump, error } = await supabase
           .from('dumps')
           .insert({
             user_id: user.id,
             location_name: locationName,
-            count: 1,
+            count: 0, // Start with 0, will be updated when entry is created
           })
           .select()
           .single()
 
         if (error) throw error
 
-        // Create the first dump entry
-        const { error: entryError } = await supabase
-          .from('dump_entries')
-          .insert({
-            dump_id: newDump.id,
-            user_id: user.id,
-          })
-
-        // If dump_entries doesn't exist, that's okay - the count is already set to 1
-        if (entryError) {
-          console.warn('dump_entries table may not exist yet:', entryError)
-        }
+        // Show modal - entry will be created when user selects an option
+        setPendingDumpId(newDump.id)
+        setPendingLocationName(locationName)
+        setShowGhostWipeModal(true)
 
         setLocations((prev) => {
           const updated = [newDump, ...prev]
@@ -166,57 +123,10 @@ function Dashboard({ user }) {
       const location = locations.find((loc) => loc.id === locationId)
       if (!location) return
 
-      // Create a new dump entry (this will trigger the count sync via trigger)
-      const { error: entryError } = await supabase
-        .from('dump_entries')
-        .insert({
-          dump_id: locationId,
-          user_id: user.id,
-        })
-
-      if (entryError) {
-        // Fallback to old method if dump_entries table doesn't exist yet
-        const { data, error } = await supabase
-          .from('dumps')
-          .update({
-            count: location.count + 1,
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', locationId)
-          .select()
-          .single()
-
-        if (error) throw error
-
-        setLocations((prev) => {
-          const updated = prev.map((loc) => (loc.id === locationId ? data : loc))
-          return updated.sort((a, b) => b.count - a.count)
-        })
-
-        if (selectedLocation?.id === locationId) {
-          setSelectedLocation(data)
-        }
-        return
-      }
-
-      // Fetch updated location after entry is created
-      const { data, error } = await supabase
-        .from('dumps')
-        .select('*')
-        .eq('id', locationId)
-        .single()
-
-      if (error) throw error
-
-      setLocations((prev) => {
-        const updated = prev.map((loc) => (loc.id === locationId ? data : loc))
-        return updated.sort((a, b) => b.count - a.count)
-      })
-
-      // Update selected location if modal is open
-      if (selectedLocation?.id === locationId) {
-        setSelectedLocation(data)
-      }
+      // Show modal first - don't create entry yet
+      setPendingDumpId(locationId)
+      setPendingLocationName(location.location_name)
+      setShowGhostWipeModal(true)
     } catch (err) {
       setError(err.message || 'Failed to increment count')
     }
@@ -297,6 +207,85 @@ function Dashboard({ user }) {
     }
   }
 
+  const createDumpEntry = async (dumpType) => {
+    if (!pendingDumpId) return
+
+    try {
+      // Create the dump entry with the selected type
+      const entryData = {
+        dump_id: pendingDumpId,
+        user_id: user.id,
+        ghost_wipe: dumpType === 'ghost_wipe',
+        messy_dump: dumpType === 'messy_dump',
+        classic_dump: dumpType === 'classic_dump',
+      }
+
+      const { data: newEntry, error } = await supabase
+        .from('dump_entries')
+        .insert(entryData)
+        .select()
+        .single()
+
+      if (error) throw error
+
+      // Fetch updated location after entry is created (trigger will update count)
+      const { data: updatedLocation, error: fetchError } = await supabase
+        .from('dumps')
+        .select('*')
+        .eq('id', pendingDumpId)
+        .single()
+
+      if (fetchError) {
+        console.error('Error fetching updated location:', fetchError)
+      } else {
+        // Update locations list
+        setLocations((prev) => {
+          const updated = prev.map((loc) => (loc.id === pendingDumpId ? updatedLocation : loc))
+          return updated.sort((a, b) => b.count - a.count)
+        })
+
+        // Update selected location if it's the one being modified
+        if (selectedLocation?.id === pendingDumpId) {
+          setSelectedLocation(updatedLocation)
+        }
+      }
+
+      // Close modal and reset state
+      setShowGhostWipeModal(false)
+      setPendingDumpId(null)
+      setPendingLocationName('')
+    } catch (err) {
+      console.error('Error creating dump entry:', err)
+      setError(err.message || 'Failed to save dump entry')
+      setShowGhostWipeModal(false)
+      setPendingDumpId(null)
+      setPendingLocationName('')
+    }
+  }
+
+  const handleGhostWipe = async () => {
+    await createDumpEntry('ghost_wipe')
+  }
+
+  const handleMessyDump = async () => {
+    await createDumpEntry('messy_dump')
+  }
+
+  const handleClassicDump = async () => {
+    await createDumpEntry('classic_dump')
+  }
+
+  const handlePreferNotToSay = async () => {
+    await createDumpEntry('prefer_not_to_say')
+  }
+
+  const handleCloseModal = () => {
+    // Just close the modal without creating any entry
+    setShowGhostWipeModal(false)
+    setPendingDumpId(null)
+    setPendingLocationName('')
+  }
+
   const handleLogout = async () => {
     await supabase.auth.signOut()
   }
@@ -316,9 +305,17 @@ function Dashboard({ user }) {
           <span className="emoji">🚽</span>
           <h1>Dump Tracker 2026</h1>
         </div>
-        <button onClick={handleLogout} className="logout-button">
-          Logout
-        </button>
+        <div className="header-actions">
+          <button onClick={onNavigateToLeaderboard} className="leaderboard-button" title="Leaderboard">
+            🏆
+          </button>
+          <button onClick={onNavigateToSettings} className="settings-button" title="Settings">
+            ⚙️
+          </button>
+          <button onClick={handleLogout} className="logout-button">
+            Logout
+          </button>
+        </div>
       </div>
 
       <form onSubmit={handleAddLocation} className="add-location-form">
@@ -407,6 +404,58 @@ function Dashboard({ user }) {
             <p className="modal-info">
               Created: {new Date(selectedLocation.created_at).toLocaleDateString()}
             </p>
+          </div>
+        </div>
+      )}
+
+      {showGhostWipeModal && (
+        <div
+          className="ghost-wipe-modal-overlay"
+          onClick={handleCloseModal}
+        >
+          <div
+            className="ghost-wipe-modal-content"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              className="modal-close"
+              onClick={handleCloseModal}
+            >
+              ×
+            </button>
+            <div className="wipe-type-icon">🚽</div>
+            <h2>What type of dump?</h2>
+            <p>How did this dump go?</p>
+            <div className="ghost-wipe-buttons">
+              <button
+                onClick={handleGhostWipe}
+                className="ghost-wipe-button"
+                title="A clean wipe with no residue - the perfect dump!"
+              >
+                👻🧻 Ghost Wipe
+              </button>
+              <button
+                onClick={handleMessyDump}
+                className="messy-dump-button"
+                title="A messy dump that required extra cleanup"
+              >
+                💩🧻 Messy Dump
+              </button>
+              <button
+                onClick={handleClassicDump}
+                className="classic-dump-button"
+                title="A classic, standard dump - nothing special, nothing terrible"
+              >
+                🚽 Classic Old Dump
+              </button>
+              <button
+                onClick={handlePreferNotToSay}
+                className="skip-button"
+                title="Don't want to specify the type of dump"
+              >
+                Prefer Not To Say
+              </button>
+            </div>
           </div>
         </div>
       )}

@@ -9,8 +9,12 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT UNIQUE NOT NULL,
   first_name TEXT,
   last_name TEXT,
+  leaderboard_opt_in BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- Add comment to document the leaderboard_opt_in field
+COMMENT ON COLUMN users.leaderboard_opt_in IS 'Whether the user has opted in to appear on the leaderboard';
 
 -- Create dumps table
 CREATE TABLE IF NOT EXISTS dumps (
@@ -34,6 +38,9 @@ CREATE TABLE IF NOT EXISTS dump_entries (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   dump_id UUID NOT NULL REFERENCES dumps(id) ON DELETE CASCADE,
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  ghost_wipe BOOLEAN DEFAULT FALSE,
+  messy_dump BOOLEAN DEFAULT FALSE,
+  classic_dump BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -41,6 +48,9 @@ CREATE TABLE IF NOT EXISTS dump_entries (
 CREATE INDEX IF NOT EXISTS idx_dump_entries_dump_id ON dump_entries(dump_id);
 CREATE INDEX IF NOT EXISTS idx_dump_entries_user_id ON dump_entries(user_id);
 CREATE INDEX IF NOT EXISTS idx_dump_entries_created_at ON dump_entries(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_dump_entries_ghost_wipe ON dump_entries(ghost_wipe) WHERE ghost_wipe = TRUE;
+CREATE INDEX IF NOT EXISTS idx_dump_entries_messy_dump ON dump_entries(messy_dump) WHERE messy_dump = TRUE;
+CREATE INDEX IF NOT EXISTS idx_dump_entries_classic_dump ON dump_entries(classic_dump) WHERE classic_dump = TRUE;
 
 -- Create function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -107,6 +117,7 @@ BEGIN
   WHERE id = current_user_id;
 
   -- Insert or update user record (upsert)
+  -- IMPORTANT: Preserve existing first_name and last_name if they're already set
   INSERT INTO public.users (id, email, first_name, last_name)
   VALUES (
     current_user_id,
@@ -117,8 +128,18 @@ BEGIN
   ON CONFLICT (id) DO UPDATE
   SET
     email = COALESCE(EXCLUDED.email, users.email),
-    first_name = COALESCE(EXCLUDED.first_name, users.first_name),
-    last_name = COALESCE(EXCLUDED.last_name, users.last_name);
+    -- Only update first_name/last_name if they're currently null or empty in the users table
+    -- This preserves user-set names from the Settings page
+    first_name = CASE 
+      WHEN users.first_name IS NULL OR users.first_name = '' 
+      THEN COALESCE(EXCLUDED.first_name, '')
+      ELSE users.first_name
+    END,
+    last_name = CASE 
+      WHEN users.last_name IS NULL OR users.last_name = '' 
+      THEN COALESCE(EXCLUDED.last_name, '')
+      ELSE users.last_name
+    END;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
@@ -142,7 +163,8 @@ CREATE POLICY "Users can view own profile"
 
 CREATE POLICY "Users can update own profile"
   ON users FOR UPDATE
-  USING (auth.uid() = id);
+  USING (auth.uid() = id)
+  WITH CHECK (auth.uid() = id);
 
 -- RLS Policies for dumps table
 -- Users can only see their own dumps
@@ -217,4 +239,290 @@ CREATE TRIGGER sync_count_on_delete
 -- will automatically return the authenticated user's ID.
 -- The users.id must match auth.users.id when creating accounts.
 -- The app automatically creates a users record when a user registers via Supabase Auth.
+
+-- ============================================================================
+-- Leaderboard Query Functions
+-- ============================================================================
+-- These functions are used by the leaderboard feature to query user statistics
+
+-- Function to get most dumps in current day
+CREATE OR REPLACE FUNCTION get_leaderboard_daily()
+RETURNS TABLE (
+  user_id UUID,
+  first_name TEXT,
+  last_name TEXT,
+  dump_count BIGINT
+) AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    u.id as user_id,
+    u.first_name,
+    u.last_name,
+    COUNT(de.id)::BIGINT as dump_count
+  FROM users u
+  INNER JOIN dump_entries de ON de.user_id = u.id
+  WHERE u.leaderboard_opt_in = TRUE
+    AND u.first_name IS NOT NULL
+    AND u.last_name IS NOT NULL
+    AND u.first_name != ''
+    AND u.last_name != ''
+    AND DATE(de.created_at AT TIME ZONE 'UTC') = CURRENT_DATE
+  GROUP BY u.id, u.first_name, u.last_name
+  HAVING COUNT(de.id) >= 1
+  ORDER BY dump_count DESC;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Function to get most dumps in current week
+CREATE OR REPLACE FUNCTION get_leaderboard_weekly()
+RETURNS TABLE (
+  user_id UUID,
+  first_name TEXT,
+  last_name TEXT,
+  dump_count BIGINT
+) AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    u.id as user_id,
+    u.first_name,
+    u.last_name,
+    COUNT(de.id)::BIGINT as dump_count
+  FROM users u
+  INNER JOIN dump_entries de ON de.user_id = u.id
+  WHERE u.leaderboard_opt_in = TRUE
+    AND u.first_name IS NOT NULL
+    AND u.last_name IS NOT NULL
+    AND u.first_name != ''
+    AND u.last_name != ''
+    AND de.created_at >= DATE_TRUNC('week', CURRENT_DATE)
+  GROUP BY u.id, u.first_name, u.last_name
+  HAVING COUNT(de.id) >= 1
+  ORDER BY dump_count DESC;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Function to get most dumps in 2026 (total for the year)
+CREATE OR REPLACE FUNCTION get_leaderboard_2026()
+RETURNS TABLE (
+  user_id UUID,
+  first_name TEXT,
+  last_name TEXT,
+  dump_count BIGINT
+) AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    u.id as user_id,
+    u.first_name,
+    u.last_name,
+    COUNT(de.id)::BIGINT as dump_count
+  FROM users u
+  INNER JOIN dump_entries de ON de.user_id = u.id
+  WHERE u.leaderboard_opt_in = TRUE
+    AND u.first_name IS NOT NULL
+    AND u.last_name IS NOT NULL
+    AND u.first_name != ''
+    AND u.last_name != ''
+    AND EXTRACT(YEAR FROM de.created_at AT TIME ZONE 'UTC') = 2026
+  GROUP BY u.id, u.first_name, u.last_name
+  HAVING COUNT(de.id) >= 1
+  ORDER BY dump_count DESC;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Function to get most ghost wipes
+CREATE OR REPLACE FUNCTION get_leaderboard_ghost_wipes()
+RETURNS TABLE (
+  user_id UUID,
+  first_name TEXT,
+  last_name TEXT,
+  ghost_wipe_count BIGINT
+) AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    u.id as user_id,
+    u.first_name,
+    u.last_name,
+    COUNT(de.id)::BIGINT as ghost_wipe_count
+  FROM users u
+  INNER JOIN dump_entries de ON de.user_id = u.id
+  WHERE u.leaderboard_opt_in = TRUE
+    AND u.first_name IS NOT NULL
+    AND u.last_name IS NOT NULL
+    AND u.first_name != ''
+    AND u.last_name != ''
+    AND de.ghost_wipe = TRUE
+  GROUP BY u.id, u.first_name, u.last_name
+  ORDER BY ghost_wipe_count DESC
+  LIMIT 3;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Function to get most messy dumps
+CREATE OR REPLACE FUNCTION get_leaderboard_messy_dumps()
+RETURNS TABLE (
+  user_id UUID,
+  first_name TEXT,
+  last_name TEXT,
+  messy_dump_count BIGINT
+) AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    u.id as user_id,
+    u.first_name,
+    u.last_name,
+    COUNT(de.id)::BIGINT as messy_dump_count
+  FROM users u
+  INNER JOIN dump_entries de ON de.user_id = u.id
+  WHERE u.leaderboard_opt_in = TRUE
+    AND u.first_name IS NOT NULL
+    AND u.last_name IS NOT NULL
+    AND u.first_name != ''
+    AND u.last_name != ''
+    AND de.messy_dump = TRUE
+  GROUP BY u.id, u.first_name, u.last_name
+  ORDER BY messy_dump_count DESC
+  LIMIT 3;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Function to get highest dumps in one day (across all locations)
+CREATE OR REPLACE FUNCTION get_leaderboard_single_day_record()
+RETURNS TABLE (
+  user_id UUID,
+  first_name TEXT,
+  last_name TEXT,
+  dump_count BIGINT,
+  record_date DATE
+) AS $$
+BEGIN
+  RETURN QUERY
+  WITH daily_counts AS (
+    SELECT 
+      u.id as user_id,
+      u.first_name,
+      u.last_name,
+      DATE(de.created_at AT TIME ZONE 'UTC') as dump_date,
+      COUNT(de.id)::BIGINT as dump_count
+    FROM users u
+    INNER JOIN dump_entries de ON de.user_id = u.id
+    WHERE u.leaderboard_opt_in = TRUE
+      AND u.first_name IS NOT NULL
+      AND u.last_name IS NOT NULL
+      AND u.first_name != ''
+      AND u.last_name != ''
+    GROUP BY u.id, u.first_name, u.last_name, DATE(de.created_at AT TIME ZONE 'UTC')
+  ),
+  max_daily AS (
+    SELECT 
+      dc.user_id,
+      dc.first_name,
+      dc.last_name,
+      MAX(dc.dump_count) as max_count
+    FROM daily_counts dc
+    GROUP BY dc.user_id, dc.first_name, dc.last_name
+  )
+  SELECT DISTINCT ON (m.user_id)
+    m.user_id,
+    m.first_name,
+    m.last_name,
+    m.max_count as dump_count,
+    dc.dump_date as record_date
+  FROM max_daily m
+  INNER JOIN daily_counts dc ON dc.user_id = m.user_id AND dc.dump_count = m.max_count
+  WHERE m.first_name IS NOT NULL
+    AND m.last_name IS NOT NULL
+    AND m.first_name != ''
+    AND m.last_name != ''
+  ORDER BY m.user_id, m.max_count DESC, dc.dump_date DESC
+  LIMIT 3;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Function to get highest dumps in one location
+CREATE OR REPLACE FUNCTION get_leaderboard_single_location_record()
+RETURNS TABLE (
+  user_id UUID,
+  first_name TEXT,
+  last_name TEXT,
+  location_name TEXT,
+  dump_count BIGINT
+) AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    u.id as user_id,
+    u.first_name,
+    u.last_name,
+    d.location_name,
+    COUNT(de.id)::BIGINT as dump_count
+  FROM users u
+  INNER JOIN dumps d ON d.user_id = u.id
+  INNER JOIN dump_entries de ON de.dump_id = d.id
+  WHERE u.leaderboard_opt_in = TRUE
+    AND u.first_name IS NOT NULL
+    AND u.last_name IS NOT NULL
+    AND u.first_name != ''
+    AND u.last_name != ''
+  GROUP BY u.id, u.first_name, u.last_name, d.id, d.location_name
+  ORDER BY dump_count DESC
+  LIMIT 3;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Function to get highest average dumps per day
+CREATE OR REPLACE FUNCTION get_leaderboard_avg_per_day()
+RETURNS TABLE (
+  user_id UUID,
+  first_name TEXT,
+  last_name TEXT,
+  avg_dumps_per_day NUMERIC
+) AS $$
+BEGIN
+  RETURN QUERY
+  WITH user_stats AS (
+    SELECT 
+      u.id as user_id,
+      u.first_name,
+      u.last_name,
+      u.created_at as account_created,
+      COUNT(de.id)::NUMERIC as total_dumps,
+      GREATEST(
+        (CURRENT_DATE - DATE(u.created_at AT TIME ZONE 'UTC'))::NUMERIC,
+        1.0
+      ) as days_since_creation
+    FROM users u
+    INNER JOIN dump_entries de ON de.user_id = u.id
+    WHERE u.leaderboard_opt_in = TRUE
+      AND u.first_name IS NOT NULL
+      AND u.last_name IS NOT NULL
+      AND u.first_name != ''
+      AND u.last_name != ''
+    GROUP BY u.id, u.first_name, u.last_name, u.created_at
+    HAVING COUNT(de.id) >= 1
+  )
+  SELECT 
+    us.user_id,
+    us.first_name,
+    us.last_name,
+    ROUND((us.total_dumps / us.days_since_creation)::NUMERIC, 2) as avg_dumps_per_day
+  FROM user_stats us
+  ORDER BY avg_dumps_per_day DESC
+  LIMIT 3;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Grant execute permissions to authenticated users for leaderboard functions
+GRANT EXECUTE ON FUNCTION get_leaderboard_daily() TO authenticated;
+GRANT EXECUTE ON FUNCTION get_leaderboard_weekly() TO authenticated;
+GRANT EXECUTE ON FUNCTION get_leaderboard_2026() TO authenticated;
+GRANT EXECUTE ON FUNCTION get_leaderboard_ghost_wipes() TO authenticated;
+GRANT EXECUTE ON FUNCTION get_leaderboard_messy_dumps() TO authenticated;
+GRANT EXECUTE ON FUNCTION get_leaderboard_single_day_record() TO authenticated;
+GRANT EXECUTE ON FUNCTION get_leaderboard_single_location_record() TO authenticated;
+GRANT EXECUTE ON FUNCTION get_leaderboard_avg_per_day() TO authenticated;
 
