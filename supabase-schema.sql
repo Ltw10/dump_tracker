@@ -62,6 +62,7 @@ END;
 $$ language 'plpgsql';
 
 -- Create trigger to automatically update updated_at
+DROP TRIGGER IF EXISTS update_dumps_updated_at ON dumps;
 CREATE TRIGGER update_dumps_updated_at
   BEFORE UPDATE ON dumps
   FOR EACH ROW
@@ -152,15 +153,16 @@ ALTER TABLE dumps ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies for users table
 -- Users can only see and update their own record
+DROP POLICY IF EXISTS "Users can view own profile" ON users;
 CREATE POLICY "Users can view own profile"
   ON users FOR SELECT
   USING (auth.uid() = id);
 
 -- Note: User insertion is now handled by the trigger, so we don't need an INSERT policy
 -- The trigger runs with SECURITY DEFINER, so it bypasses RLS
--- If you had an INSERT policy before, drop it with:
--- DROP POLICY IF EXISTS "Users can insert own profile" ON users;
+DROP POLICY IF EXISTS "Users can insert own profile" ON users;
 
+DROP POLICY IF EXISTS "Users can update own profile" ON users;
 CREATE POLICY "Users can update own profile"
   ON users FOR UPDATE
   USING (auth.uid() = id)
@@ -168,21 +170,25 @@ CREATE POLICY "Users can update own profile"
 
 -- RLS Policies for dumps table
 -- Users can only see their own dumps
+DROP POLICY IF EXISTS "Users can view own dumps" ON dumps;
 CREATE POLICY "Users can view own dumps"
   ON dumps FOR SELECT
   USING (auth.uid() = user_id);
 
 -- Users can insert their own dumps
+DROP POLICY IF EXISTS "Users can insert own dumps" ON dumps;
 CREATE POLICY "Users can insert own dumps"
   ON dumps FOR INSERT
   WITH CHECK (auth.uid() = user_id);
 
 -- Users can update their own dumps
+DROP POLICY IF EXISTS "Users can update own dumps" ON dumps;
 CREATE POLICY "Users can update own dumps"
   ON dumps FOR UPDATE
   USING (auth.uid() = user_id);
 
 -- Users can delete their own dumps
+DROP POLICY IF EXISTS "Users can delete own dumps" ON dumps;
 CREATE POLICY "Users can delete own dumps"
   ON dumps FOR DELETE
   USING (auth.uid() = user_id);
@@ -191,14 +197,17 @@ CREATE POLICY "Users can delete own dumps"
 ALTER TABLE dump_entries ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies for dump_entries table
+DROP POLICY IF EXISTS "Users can view own dump entries" ON dump_entries;
 CREATE POLICY "Users can view own dump entries"
   ON dump_entries FOR SELECT
   USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can insert own dump entries" ON dump_entries;
 CREATE POLICY "Users can insert own dump entries"
   ON dump_entries FOR INSERT
   WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can delete own dump entries" ON dump_entries;
 CREATE POLICY "Users can delete own dump entries"
   ON dump_entries FOR DELETE
   USING (auth.uid() = user_id);
@@ -267,7 +276,7 @@ BEGIN
     AND u.last_name IS NOT NULL
     AND u.first_name != ''
     AND u.last_name != ''
-    AND DATE(de.created_at AT TIME ZONE 'UTC') = CURRENT_DATE
+    AND DATE(de.created_at AT TIME ZONE 'America/New_York') = (CURRENT_TIMESTAMP AT TIME ZONE 'America/New_York')::DATE
   GROUP BY u.id, u.first_name, u.last_name
   HAVING COUNT(de.id) >= 1
   ORDER BY dump_count DESC;
@@ -296,7 +305,7 @@ BEGIN
     AND u.last_name IS NOT NULL
     AND u.first_name != ''
     AND u.last_name != ''
-    AND de.created_at >= DATE_TRUNC('week', CURRENT_DATE)
+    AND de.created_at >= DATE_TRUNC('week', (CURRENT_TIMESTAMP AT TIME ZONE 'America/New_York')::DATE) AT TIME ZONE 'America/New_York'
   GROUP BY u.id, u.first_name, u.last_name
   HAVING COUNT(de.id) >= 1
   ORDER BY dump_count DESC;
@@ -325,7 +334,7 @@ BEGIN
     AND u.last_name IS NOT NULL
     AND u.first_name != ''
     AND u.last_name != ''
-    AND EXTRACT(YEAR FROM de.created_at AT TIME ZONE 'UTC') = 2026
+    AND EXTRACT(YEAR FROM de.created_at AT TIME ZONE 'America/New_York') = 2026
   GROUP BY u.id, u.first_name, u.last_name
   HAVING COUNT(de.id) >= 1
   ORDER BY dump_count DESC;
@@ -357,7 +366,7 @@ BEGIN
     AND de.ghost_wipe = TRUE
   GROUP BY u.id, u.first_name, u.last_name
   ORDER BY ghost_wipe_count DESC
-  LIMIT 3;
+  LIMIT 1;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
@@ -386,7 +395,7 @@ BEGIN
     AND de.messy_dump = TRUE
   GROUP BY u.id, u.first_name, u.last_name
   ORDER BY messy_dump_count DESC
-  LIMIT 3;
+  LIMIT 1;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
@@ -406,7 +415,7 @@ BEGIN
       u.id as user_id,
       u.first_name,
       u.last_name,
-      DATE(de.created_at AT TIME ZONE 'UTC') as dump_date,
+      DATE(de.created_at AT TIME ZONE 'America/New_York') as dump_date,
       COUNT(de.id)::BIGINT as dump_count
     FROM users u
     INNER JOIN dump_entries de ON de.user_id = u.id
@@ -415,7 +424,7 @@ BEGIN
       AND u.last_name IS NOT NULL
       AND u.first_name != ''
       AND u.last_name != ''
-    GROUP BY u.id, u.first_name, u.last_name, DATE(de.created_at AT TIME ZONE 'UTC')
+    GROUP BY u.id, u.first_name, u.last_name, DATE(de.created_at AT TIME ZONE 'America/New_York')
   ),
   max_daily AS (
     SELECT 
@@ -425,6 +434,10 @@ BEGIN
       MAX(dc.dump_count) as max_count
     FROM daily_counts dc
     GROUP BY dc.user_id, dc.first_name, dc.last_name
+  ),
+  top_count AS (
+    SELECT MAX(max_count) as highest_count
+    FROM max_daily
   )
   SELECT DISTINCT ON (m.user_id)
     m.user_id,
@@ -433,13 +446,10 @@ BEGIN
     m.max_count as dump_count,
     dc.dump_date as record_date
   FROM max_daily m
+  CROSS JOIN top_count tc
   INNER JOIN daily_counts dc ON dc.user_id = m.user_id AND dc.dump_count = m.max_count
-  WHERE m.first_name IS NOT NULL
-    AND m.last_name IS NOT NULL
-    AND m.first_name != ''
-    AND m.last_name != ''
-  ORDER BY m.user_id, m.max_count DESC, dc.dump_date DESC
-  LIMIT 3;
+  WHERE m.max_count = tc.highest_count
+  ORDER BY m.user_id, dc.dump_date DESC;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
@@ -492,7 +502,7 @@ BEGIN
       u.created_at as account_created,
       COUNT(de.id)::NUMERIC as total_dumps,
       GREATEST(
-        (CURRENT_DATE - DATE(u.created_at AT TIME ZONE 'UTC'))::NUMERIC,
+        ((CURRENT_TIMESTAMP AT TIME ZONE 'America/New_York')::DATE - DATE(u.created_at AT TIME ZONE 'America/New_York'))::NUMERIC,
         1.0
       ) as days_since_creation
     FROM users u

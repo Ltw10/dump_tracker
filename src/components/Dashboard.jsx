@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
+import LocationCalendar from './LocationCalendar'
 import './Dashboard.css'
 
 function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard }) {
@@ -367,45 +368,13 @@ function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard }) {
       </div>
 
       {selectedLocation && (
-        <div
-          className="location-modal-overlay"
-          onClick={() => setSelectedLocation(null)}
-        >
-          <div
-            className="location-modal-content"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              className="modal-close"
-              onClick={() => setSelectedLocation(null)}
-            >
-              ×
-            </button>
-            <h2>{selectedLocation.location_name}</h2>
-            <div className="modal-count-display">
-              <span className="modal-count-number">{selectedLocation.count}</span>
-              <span className="modal-count-label">Total Visits</span>
-            </div>
-            <div className="modal-buttons">
-              <button
-                onClick={() => handleDecrement(selectedLocation.id)}
-                className="decrement-button"
-                disabled={selectedLocation.count <= 0}
-              >
-                -1
-              </button>
-              <button
-                onClick={() => handleIncrement(selectedLocation.id)}
-                className="modal-increment-button"
-              >
-                +1
-              </button>
-            </div>
-            <p className="modal-info">
-              Created: {new Date(selectedLocation.created_at).toLocaleDateString()}
-            </p>
-          </div>
-        </div>
+        <LocationCalendar
+          location={selectedLocation}
+          user={user}
+          onClose={() => setSelectedLocation(null)}
+          onIncrement={(locationId) => handleIncrement(locationId)}
+          onDecrement={(locationId) => handleDecrement(locationId)}
+        />
       )}
 
       {showGhostWipeModal && (

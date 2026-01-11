@@ -72,6 +72,12 @@
   padding: 0 5px;
 }
 
+.week-range {
+  color: #999;
+  font-weight: 500;
+  font-style: normal;
+}
+
 .records-section {
   background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
 }
@@ -117,6 +123,10 @@
   transition: transform 0.2s, box-shadow 0.2s;
 }
 
+.records-list .leaderboard-item {
+  padding-left: 16px;
+}
+
 .leaderboard-item:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
@@ -149,6 +159,12 @@
 .leaderboard-item:nth-child(3) .rank-badge {
   background: linear-gradient(135deg, #cd7f32 0%, #e6a85c 100%);
   box-shadow: 0 4px 12px rgba(205, 127, 50, 0.4);
+}
+
+/* For tied first place entries, all get gold styling */
+.single-day-tied .leaderboard-item .rank-badge {
+  background: linear-gradient(135deg, #ffd700 0%, #ffed4e 100%);
+  box-shadow: 0 4px 12px rgba(255, 215, 0, 0.4);
 }
 
 .leaderboard-info {

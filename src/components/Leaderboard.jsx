@@ -110,6 +110,59 @@ function Leaderboard({ user, onBack }) {
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
   }
 
+  const getCurrentWeekRange = () => {
+    const now = new Date()
+    
+    // Get current date components in EST
+    const estFormatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+      weekday: 'short'
+    })
+    
+    const estParts = estFormatter.formatToParts(now)
+    const estYear = parseInt(estParts.find(p => p.type === 'year').value)
+    const estMonth = parseInt(estParts.find(p => p.type === 'month').value)
+    const estDay = parseInt(estParts.find(p => p.type === 'day').value)
+    const estWeekday = estParts.find(p => p.type === 'weekday').value
+    
+    // Map weekday to number (Sun=0, Mon=1, ..., Sat=6)
+    const weekdayMap = { 'Sun': 0, 'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6 }
+    const dayOfWeek = weekdayMap[estWeekday] || 0
+    
+    // PostgreSQL DATE_TRUNC('week') uses ISO 8601 standard which starts weeks on Monday
+    // So we need to calculate days from Monday (not Sunday)
+    // Monday = 0, Tuesday = 1, ..., Sunday = 6
+    const daysFromMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1
+    
+    // Calculate week start (Monday) and end (Sunday) dates
+    const weekStartDay = estDay - daysFromMonday
+    const weekEndDay = weekStartDay + 6
+    
+    // Create date objects for formatting (using local time but we'll format as EST)
+    const weekStart = new Date(estYear, estMonth - 1, weekStartDay)
+    const weekEnd = new Date(estYear, estMonth - 1, weekEndDay)
+    
+    // Format dates in EST timezone
+    const startFormatted = weekStart.toLocaleDateString('en-US', {
+      timeZone: 'America/New_York',
+      month: 'short',
+      day: 'numeric',
+      year: weekStart.getFullYear() !== weekEnd.getFullYear() ? 'numeric' : undefined
+    })
+    
+    const endFormatted = weekEnd.toLocaleDateString('en-US', {
+      timeZone: 'America/New_York',
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric'
+    })
+    
+    return { start: startFormatted, end: endFormatted }
+  }
+
   if (loading) {
     return (
       <div className="leaderboard-container">
@@ -175,7 +228,15 @@ function Leaderboard({ user, onBack }) {
         {/* Weekly Stats */}
         <div className="leaderboard-section">
           <h2>📆 Most Dumps This Week</h2>
-          <p className="leaderboard-description">A week-long commitment to excellence. These folks are clearly on a roll (pun absolutely intended).</p>
+          {(() => {
+            const weekRange = getCurrentWeekRange()
+            return (
+              <p className="leaderboard-description">
+                A week-long commitment to excellence. These folks are clearly on a roll (pun absolutely intended). 
+                <span className="week-range"> ({weekRange.start} - {weekRange.end})</span>
+              </p>
+            )
+          })()}
           {weeklyStats.length === 0 ? (
             <div className="empty-leaderboard">No dumps recorded this week</div>
           ) : (
@@ -214,6 +275,52 @@ function Leaderboard({ user, onBack }) {
           )}
         </div>
 
+        {/* Highest in One Location */}
+        <div className="leaderboard-section">
+          <h2>📍 Highest in One Location</h2>
+          <p className="leaderboard-description">Home is where the heart is, and apparently where these people feel most comfortable. They've made their favorite spot a second home (literally).</p>
+          {singleLocationRecords.length === 0 ? (
+            <div className="empty-leaderboard">No location records</div>
+          ) : (
+            <div className="leaderboard-list">
+              {singleLocationRecords.map((record, index) => (
+                <div key={`${record.user_id}-${record.location_name}`} className="leaderboard-item">
+                  <div className="rank-badge">{index + 1}</div>
+                  <div className="leaderboard-info">
+                    <div className="leaderboard-name">{formatName(record.first_name, record.last_name)}</div>
+                    <div className="leaderboard-count">
+                      {record.dump_count} {record.dump_count === 1 ? 'dump' : 'dumps'} at {record.location_name}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Highest Average Dumps Per Day */}
+        <div className="leaderboard-section">
+          <h2>📈 Highest Average Dumps Per Day</h2>
+          <p className="leaderboard-description">Consistency is key, and these champions have it mastered. From account creation to today, they've maintained the highest daily average. That's commitment!</p>
+          {avgPerDayRecords.length === 0 ? (
+            <div className="empty-leaderboard">No average per day records</div>
+          ) : (
+            <div className="leaderboard-list">
+              {avgPerDayRecords.map((record, index) => (
+                <div key={record.user_id} className="leaderboard-item">
+                  <div className="rank-badge">{index + 1}</div>
+                  <div className="leaderboard-info">
+                    <div className="leaderboard-name">{formatName(record.first_name, record.last_name)}</div>
+                    <div className="leaderboard-count">
+                      {record.avg_dumps_per_day} {record.avg_dumps_per_day === 1 ? 'dump' : 'dumps'} per day average
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         {/* Records Section */}
         <div className="leaderboard-section records-section">
           <h2>🏅 Records</h2>
@@ -224,10 +331,9 @@ function Leaderboard({ user, onBack }) {
             {ghostWipeRecords.length === 0 ? (
               <div className="empty-leaderboard">No ghost wipes recorded</div>
             ) : (
-              <div className="leaderboard-list">
-                {ghostWipeRecords.map((record, index) => (
+              <div className="leaderboard-list records-list">
+                {ghostWipeRecords.map((record) => (
                   <div key={record.user_id} className="leaderboard-item">
-                    <div className="rank-badge">{index + 1}</div>
                     <div className="leaderboard-info">
                       <div className="leaderboard-name">{formatName(record.first_name, record.last_name)}</div>
                       <div className="leaderboard-count">{record.ghost_wipe_count} {record.ghost_wipe_count === 1 ? 'ghost wipe' : 'ghost wipes'}</div>
@@ -244,10 +350,9 @@ function Leaderboard({ user, onBack }) {
             {messyDumpRecords.length === 0 ? (
               <div className="empty-leaderboard">No messy dumps recorded</div>
             ) : (
-              <div className="leaderboard-list">
-                {messyDumpRecords.map((record, index) => (
+              <div className="leaderboard-list records-list">
+                {messyDumpRecords.map((record) => (
                   <div key={record.user_id} className="leaderboard-item">
-                    <div className="rank-badge">{index + 1}</div>
                     <div className="leaderboard-info">
                       <div className="leaderboard-name">{formatName(record.first_name, record.last_name)}</div>
                       <div className="leaderboard-count">{record.messy_dump_count} {record.messy_dump_count === 1 ? 'messy dump' : 'messy dumps'}</div>
@@ -264,58 +369,13 @@ function Leaderboard({ user, onBack }) {
             {singleDayRecords.length === 0 ? (
               <div className="empty-leaderboard">No single-day records</div>
             ) : (
-              <div className="leaderboard-list">
-                {singleDayRecords.map((record, index) => (
+              <div className="leaderboard-list records-list single-day-tied">
+                {singleDayRecords.map((record) => (
                   <div key={record.user_id} className="leaderboard-item">
-                    <div className="rank-badge">{index + 1}</div>
                     <div className="leaderboard-info">
                       <div className="leaderboard-name">{formatName(record.first_name, record.last_name)}</div>
                       <div className="leaderboard-count">
                         {record.dump_count} {record.dump_count === 1 ? 'dump' : 'dumps'} on {formatDate(record.record_date)}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="record-category">
-            <h3>📍 Highest in One Location</h3>
-            <p className="record-description">Home is where the heart is, and apparently where these people feel most comfortable. They've made their favorite spot a second home (literally).</p>
-            {singleLocationRecords.length === 0 ? (
-              <div className="empty-leaderboard">No location records</div>
-            ) : (
-              <div className="leaderboard-list">
-                {singleLocationRecords.map((record, index) => (
-                  <div key={`${record.user_id}-${record.location_name}`} className="leaderboard-item">
-                    <div className="rank-badge">{index + 1}</div>
-                    <div className="leaderboard-info">
-                      <div className="leaderboard-name">{formatName(record.first_name, record.last_name)}</div>
-                      <div className="leaderboard-count">
-                        {record.dump_count} {record.dump_count === 1 ? 'dump' : 'dumps'} at {record.location_name}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          <div className="record-category">
-            <h3>📈 Highest Average Dumps Per Day</h3>
-            <p className="record-description">Consistency is key, and these champions have it mastered. From account creation to today, they've maintained the highest daily average. That's commitment!</p>
-            {avgPerDayRecords.length === 0 ? (
-              <div className="empty-leaderboard">No average per day records</div>
-            ) : (
-              <div className="leaderboard-list">
-                {avgPerDayRecords.map((record, index) => (
-                  <div key={record.user_id} className="leaderboard-item">
-                    <div className="rank-badge">{index + 1}</div>
-                    <div className="leaderboard-info">
-                      <div className="leaderboard-name">{formatName(record.first_name, record.last_name)}</div>
-                      <div className="leaderboard-count">
-                        {record.avg_dumps_per_day} {record.avg_dumps_per_day === 1 ? 'dump' : 'dumps'} per day average
                       </div>
                     </div>
                   </div>
