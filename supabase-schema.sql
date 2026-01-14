@@ -351,22 +351,37 @@ RETURNS TABLE (
 ) AS $$
 BEGIN
   RETURN QUERY
+  WITH ghost_wipe_counts AS (
+    SELECT 
+      u.id as user_id,
+      u.first_name,
+      u.last_name,
+      COUNT(de.id)::BIGINT as ghost_wipe_count
+    FROM users u
+    INNER JOIN dump_entries de ON de.user_id = u.id
+    WHERE u.leaderboard_opt_in = TRUE
+      AND u.first_name IS NOT NULL
+      AND u.last_name IS NOT NULL
+      AND u.first_name != ''
+      AND u.last_name != ''
+      AND de.ghost_wipe = TRUE
+    GROUP BY u.id, u.first_name, u.last_name
+    HAVING COUNT(de.id) > 0
+  ),
+  top_count AS (
+    SELECT COALESCE(MAX(gwc2.ghost_wipe_count), 0) as highest_count
+    FROM ghost_wipe_counts gwc2
+  )
   SELECT 
-    u.id as user_id,
-    u.first_name,
-    u.last_name,
-    COUNT(de.id)::BIGINT as ghost_wipe_count
-  FROM users u
-  INNER JOIN dump_entries de ON de.user_id = u.id
-  WHERE u.leaderboard_opt_in = TRUE
-    AND u.first_name IS NOT NULL
-    AND u.last_name IS NOT NULL
-    AND u.first_name != ''
-    AND u.last_name != ''
-    AND de.ghost_wipe = TRUE
-  GROUP BY u.id, u.first_name, u.last_name
-  ORDER BY ghost_wipe_count DESC
-  LIMIT 1;
+    gwc.user_id,
+    gwc.first_name,
+    gwc.last_name,
+    gwc.ghost_wipe_count AS ghost_wipe_count
+  FROM ghost_wipe_counts gwc
+  CROSS JOIN top_count tc
+  WHERE tc.highest_count > 0
+    AND gwc.ghost_wipe_count = tc.highest_count
+  ORDER BY (gwc.ghost_wipe_count) DESC, gwc.first_name, gwc.last_name;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
@@ -380,22 +395,37 @@ RETURNS TABLE (
 ) AS $$
 BEGIN
   RETURN QUERY
+  WITH messy_dump_counts AS (
+    SELECT 
+      u.id as user_id,
+      u.first_name,
+      u.last_name,
+      COUNT(de.id)::BIGINT as messy_dump_count
+    FROM users u
+    INNER JOIN dump_entries de ON de.user_id = u.id
+    WHERE u.leaderboard_opt_in = TRUE
+      AND u.first_name IS NOT NULL
+      AND u.last_name IS NOT NULL
+      AND u.first_name != ''
+      AND u.last_name != ''
+      AND de.messy_dump = TRUE
+    GROUP BY u.id, u.first_name, u.last_name
+    HAVING COUNT(de.id) > 0
+  ),
+  top_count AS (
+    SELECT COALESCE(MAX(mdc2.messy_dump_count), 0) as highest_count
+    FROM messy_dump_counts mdc2
+  )
   SELECT 
-    u.id as user_id,
-    u.first_name,
-    u.last_name,
-    COUNT(de.id)::BIGINT as messy_dump_count
-  FROM users u
-  INNER JOIN dump_entries de ON de.user_id = u.id
-  WHERE u.leaderboard_opt_in = TRUE
-    AND u.first_name IS NOT NULL
-    AND u.last_name IS NOT NULL
-    AND u.first_name != ''
-    AND u.last_name != ''
-    AND de.messy_dump = TRUE
-  GROUP BY u.id, u.first_name, u.last_name
-  ORDER BY messy_dump_count DESC
-  LIMIT 1;
+    mdc.user_id,
+    mdc.first_name,
+    mdc.last_name,
+    mdc.messy_dump_count AS messy_dump_count
+  FROM messy_dump_counts mdc
+  CROSS JOIN top_count tc
+  WHERE tc.highest_count > 0
+    AND mdc.messy_dump_count = tc.highest_count
+  ORDER BY (mdc.messy_dump_count) DESC, mdc.first_name, mdc.last_name;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
@@ -425,6 +455,7 @@ BEGIN
       AND u.first_name != ''
       AND u.last_name != ''
     GROUP BY u.id, u.first_name, u.last_name, DATE(de.created_at AT TIME ZONE 'America/New_York')
+    HAVING COUNT(de.id) > 0
   ),
   max_daily AS (
     SELECT 
@@ -436,20 +467,29 @@ BEGIN
     GROUP BY dc.user_id, dc.first_name, dc.last_name
   ),
   top_count AS (
-    SELECT MAX(max_count) as highest_count
+    SELECT COALESCE(MAX(max_count), 0) as highest_count
     FROM max_daily
+  ),
+  top_users AS (
+    SELECT 
+      m.user_id,
+      m.first_name,
+      m.last_name,
+      m.max_count
+    FROM max_daily m
+    CROSS JOIN top_count tc
+    WHERE tc.highest_count > 0
+      AND m.max_count = tc.highest_count
   )
-  SELECT DISTINCT ON (m.user_id)
-    m.user_id,
-    m.first_name,
-    m.last_name,
-    m.max_count as dump_count,
+  SELECT DISTINCT ON (tu.user_id)
+    tu.user_id,
+    tu.first_name,
+    tu.last_name,
+    tu.max_count as dump_count,
     dc.dump_date as record_date
-  FROM max_daily m
-  CROSS JOIN top_count tc
-  INNER JOIN daily_counts dc ON dc.user_id = m.user_id AND dc.dump_count = m.max_count
-  WHERE m.max_count = tc.highest_count
-  ORDER BY m.user_id, dc.dump_date DESC;
+  FROM top_users tu
+  INNER JOIN daily_counts dc ON dc.user_id = tu.user_id AND dc.dump_count = tu.max_count
+  ORDER BY tu.user_id, dc.dump_date DESC;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 

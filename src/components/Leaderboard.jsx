@@ -331,7 +331,7 @@ function Leaderboard({ user, onBack }) {
             {ghostWipeRecords.length === 0 ? (
               <div className="empty-leaderboard">No ghost wipes recorded</div>
             ) : (
-              <div className="leaderboard-list records-list">
+              <div className="leaderboard-list records-list single-day-tied">
                 {ghostWipeRecords.map((record) => (
                   <div key={record.user_id} className="leaderboard-item">
                     <div className="leaderboard-info">
@@ -350,7 +350,7 @@ function Leaderboard({ user, onBack }) {
             {messyDumpRecords.length === 0 ? (
               <div className="empty-leaderboard">No messy dumps recorded</div>
             ) : (
-              <div className="leaderboard-list records-list">
+              <div className="leaderboard-list records-list single-day-tied">
                 {messyDumpRecords.map((record) => (
                   <div key={record.user_id} className="leaderboard-item">
                     <div className="leaderboard-info">
