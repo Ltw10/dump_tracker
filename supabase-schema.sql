@@ -207,6 +207,12 @@ CREATE POLICY "Users can insert own dump entries"
   ON dump_entries FOR INSERT
   WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can update own dump entries" ON dump_entries;
+CREATE POLICY "Users can update own dump entries"
+  ON dump_entries FOR UPDATE
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
 DROP POLICY IF EXISTS "Users can delete own dump entries" ON dump_entries;
 CREATE POLICY "Users can delete own dump entries"
   ON dump_entries FOR DELETE

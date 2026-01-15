@@ -12,6 +12,7 @@ function LocationCalendar({ location, user, onClose, onIncrement, onDecrement })
   const [entryToDelete, setEntryToDelete] = useState(null)
   const [showEditModal, setShowEditModal] = useState(false)
   const [entryToEdit, setEntryToEdit] = useState(null)
+  const [updateError, setUpdateError] = useState('')
 
   useEffect(() => {
     if (location) {
@@ -177,6 +178,7 @@ function LocationCalendar({ location, user, onClose, onIncrement, onDecrement })
     if (!entryToEdit) return
 
     try {
+      setUpdateError('')
       const updateData = {
         ghost_wipe: dumpType === 'ghost_wipe',
         messy_dump: dumpType === 'messy_dump',
@@ -196,7 +198,11 @@ function LocationCalendar({ location, user, onClose, onIncrement, onDecrement })
         .eq('id', entryToEdit.id)
         .eq('user_id', user.id)
 
-      if (error) throw error
+      if (error) {
+        console.error('Error updating entry:', error)
+        setUpdateError(error.message || 'Failed to update dump entry')
+        return
+      }
 
       // Refresh entries after update
       await fetchDumpEntries()
@@ -204,8 +210,10 @@ function LocationCalendar({ location, user, onClose, onIncrement, onDecrement })
       // Close modal and reset state
       setShowEditModal(false)
       setEntryToEdit(null)
+      setUpdateError('')
     } catch (err) {
       console.error('Error updating entry:', err)
+      setUpdateError(err.message || 'Failed to update dump entry')
     }
   }
 
@@ -411,6 +419,11 @@ function LocationCalendar({ location, user, onClose, onIncrement, onDecrement })
                 <strong>Date:</strong> {formatDateToEST(entryToEdit.created_at)}
               </div>
             </div>
+            {updateError && (
+              <div className="error-message" style={{ marginBottom: '15px', padding: '10px', background: '#fee', color: '#c33', borderRadius: '6px', fontSize: '14px' }}>
+                {updateError}
+              </div>
+            )}
             <div className="ghost-wipe-buttons">
               <button
                 onClick={() => handleUpdateEntry('ghost_wipe')}
