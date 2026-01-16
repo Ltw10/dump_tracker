@@ -487,8 +487,8 @@ RETURNS TABLE (
   user_id UUID,
   first_name TEXT,
   last_name TEXT,
-  dump_count BIGINT,
-  record_date DATE
+  record_date DATE,
+  dump_count BIGINT
 ) AS $$
 BEGIN
   RETURN QUERY
@@ -496,6 +496,8 @@ BEGIN
     -- Calculate dumps per user per day
     SELECT 
       de.user_id,
+      u.first_name,
+      u.last_name,
       DATE(de.created_at AT TIME ZONE 'America/New_York') AS dump_date,
       COUNT(*)::BIGINT AS dumps_count
     FROM dump_entries de
@@ -505,7 +507,7 @@ BEGIN
       AND u.last_name IS NOT NULL
       AND u.first_name != ''
       AND u.last_name != ''
-    GROUP BY de.user_id, DATE(de.created_at AT TIME ZONE 'America/New_York')
+    GROUP BY de.user_id, u.first_name, u.last_name, DATE(de.created_at AT TIME ZONE 'America/New_York')
   ),
   max_count AS (
     -- Find the maximum dumps in a day across all users
@@ -516,23 +518,23 @@ BEGIN
     -- Find all user-date combinations that match the record
     SELECT 
       dc.user_id,
+      dc.first_name,
+      dc.last_name,
       dc.dump_date,
-      dc.dumps_count AS record_dumps,
+      dc.dumps_count,
       ROW_NUMBER() OVER (PARTITION BY dc.user_id ORDER BY dc.dump_date ASC) AS rn
     FROM daily_counts dc
     CROSS JOIN max_count mc
     WHERE dc.dumps_count = mc.record_count
-      AND mc.record_count IS NOT NULL
   )
-  -- Return only the first occurrence for each user, with user names
+  -- Return only the first occurrence for each user
   SELECT 
     rh.user_id,
-    u.first_name,
-    u.last_name,
-    rh.record_dumps AS dump_count,
-    rh.dump_date AS record_date
+    rh.first_name,
+    rh.last_name,
+    rh.dump_date AS record_date,
+    rh.dumps_count AS dump_count
   FROM record_holders rh
-  INNER JOIN users u ON u.id = rh.user_id
   WHERE rh.rn = 1
   ORDER BY rh.dump_date ASC, rh.user_id;
 END;
