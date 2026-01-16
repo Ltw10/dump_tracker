@@ -219,6 +219,7 @@ function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard }) {
         ghost_wipe: dumpType === 'ghost_wipe',
         messy_dump: dumpType === 'messy_dump',
         classic_dump: dumpType === 'classic_dump',
+        liquid_dump: dumpType === 'liquid_dump',
       }
 
       const { data: newEntry, error } = await supabase
@@ -274,6 +275,10 @@ function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard }) {
 
   const handleClassicDump = async () => {
     await createDumpEntry('classic_dump')
+  }
+
+  const handleLiquidDump = async () => {
+    await createDumpEntry('liquid_dump')
   }
 
   const handlePreferNotToSay = async () => {
@@ -409,6 +414,13 @@ function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard }) {
                 title="A messy dump that required extra cleanup"
               >
                 💩🧻 Messy Dump
+              </button>
+              <button
+                onClick={handleLiquidDump}
+                className="liquid-dump-button"
+                title="A liquid dump - when things get a bit runny"
+              >
+                💧 Liquid Dump
               </button>
               <button
                 onClick={handleClassicDump}

@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS dump_entries (
   ghost_wipe BOOLEAN DEFAULT FALSE,
   messy_dump BOOLEAN DEFAULT FALSE,
   classic_dump BOOLEAN DEFAULT FALSE,
+  liquid_dump BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -51,6 +52,7 @@ CREATE INDEX IF NOT EXISTS idx_dump_entries_created_at ON dump_entries(created_a
 CREATE INDEX IF NOT EXISTS idx_dump_entries_ghost_wipe ON dump_entries(ghost_wipe) WHERE ghost_wipe = TRUE;
 CREATE INDEX IF NOT EXISTS idx_dump_entries_messy_dump ON dump_entries(messy_dump) WHERE messy_dump = TRUE;
 CREATE INDEX IF NOT EXISTS idx_dump_entries_classic_dump ON dump_entries(classic_dump) WHERE classic_dump = TRUE;
+CREATE INDEX IF NOT EXISTS idx_dump_entries_liquid_dump ON dump_entries(liquid_dump) WHERE liquid_dump = TRUE;
 
 -- Create function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -435,6 +437,50 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+-- Function to get most liquid dumps
+CREATE OR REPLACE FUNCTION get_leaderboard_liquid_dumps()
+RETURNS TABLE (
+  user_id UUID,
+  first_name TEXT,
+  last_name TEXT,
+  liquid_dump_count BIGINT
+) AS $$
+BEGIN
+  RETURN QUERY
+  WITH liquid_dump_counts AS (
+    SELECT 
+      u.id as user_id,
+      u.first_name,
+      u.last_name,
+      COUNT(de.id)::BIGINT as liquid_dump_count
+    FROM users u
+    INNER JOIN dump_entries de ON de.user_id = u.id
+    WHERE u.leaderboard_opt_in = TRUE
+      AND u.first_name IS NOT NULL
+      AND u.last_name IS NOT NULL
+      AND u.first_name != ''
+      AND u.last_name != ''
+      AND de.liquid_dump = TRUE
+    GROUP BY u.id, u.first_name, u.last_name
+    HAVING COUNT(de.id) > 0
+  ),
+  top_count AS (
+    SELECT COALESCE(MAX(ldc2.liquid_dump_count), 0) as highest_count
+    FROM liquid_dump_counts ldc2
+  )
+  SELECT 
+    ldc.user_id,
+    ldc.first_name,
+    ldc.last_name,
+    ldc.liquid_dump_count AS liquid_dump_count
+  FROM liquid_dump_counts ldc
+  CROSS JOIN top_count tc
+  WHERE tc.highest_count > 0
+    AND ldc.liquid_dump_count = tc.highest_count
+  ORDER BY (ldc.liquid_dump_count) DESC, ldc.first_name, ldc.last_name;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
 -- Function to get highest dumps in one day (across all locations)
 CREATE OR REPLACE FUNCTION get_leaderboard_single_day_record()
 RETURNS TABLE (
@@ -447,55 +493,48 @@ RETURNS TABLE (
 BEGIN
   RETURN QUERY
   WITH daily_counts AS (
+    -- Calculate dumps per user per day
     SELECT 
-      u.id as user_id,
-      u.first_name,
-      u.last_name,
-      DATE(de.created_at AT TIME ZONE 'America/New_York') as dump_date,
-      COUNT(de.id)::BIGINT as dump_count
-    FROM users u
-    INNER JOIN dump_entries de ON de.user_id = u.id
+      de.user_id,
+      DATE(de.created_at AT TIME ZONE 'America/New_York') AS dump_date,
+      COUNT(*)::BIGINT AS dumps_count
+    FROM dump_entries de
+    INNER JOIN users u ON u.id = de.user_id
     WHERE u.leaderboard_opt_in = TRUE
       AND u.first_name IS NOT NULL
       AND u.last_name IS NOT NULL
       AND u.first_name != ''
       AND u.last_name != ''
-    GROUP BY u.id, u.first_name, u.last_name, DATE(de.created_at AT TIME ZONE 'America/New_York')
-    HAVING COUNT(de.id) > 0
+    GROUP BY de.user_id, DATE(de.created_at AT TIME ZONE 'America/New_York')
   ),
-  max_daily AS (
+  max_count AS (
+    -- Find the maximum dumps in a day across all users
+    SELECT MAX(dumps_count) AS record_count
+    FROM daily_counts
+  ),
+  record_holders AS (
+    -- Find all user-date combinations that match the record
     SELECT 
       dc.user_id,
-      dc.first_name,
-      dc.last_name,
-      MAX(dc.dump_count) as max_count
+      dc.dump_date,
+      dc.dumps_count AS record_dumps,
+      ROW_NUMBER() OVER (PARTITION BY dc.user_id ORDER BY dc.dump_date ASC) AS rn
     FROM daily_counts dc
-    GROUP BY dc.user_id, dc.first_name, dc.last_name
-  ),
-  top_count AS (
-    SELECT COALESCE(MAX(max_count), 0) as highest_count
-    FROM max_daily
-  ),
-  top_users AS (
-    SELECT 
-      m.user_id,
-      m.first_name,
-      m.last_name,
-      m.max_count
-    FROM max_daily m
-    CROSS JOIN top_count tc
-    WHERE tc.highest_count > 0
-      AND m.max_count = tc.highest_count
+    CROSS JOIN max_count mc
+    WHERE dc.dumps_count = mc.record_count
+      AND mc.record_count IS NOT NULL
   )
-  SELECT DISTINCT ON (tu.user_id)
-    tu.user_id,
-    tu.first_name,
-    tu.last_name,
-    tu.max_count as dump_count,
-    dc.dump_date as record_date
-  FROM top_users tu
-  INNER JOIN daily_counts dc ON dc.user_id = tu.user_id AND dc.dump_count = tu.max_count
-  ORDER BY tu.user_id, dc.dump_date DESC;
+  -- Return only the first occurrence for each user, with user names
+  SELECT 
+    rh.user_id,
+    u.first_name,
+    u.last_name,
+    rh.record_dumps AS dump_count,
+    rh.dump_date AS record_date
+  FROM record_holders rh
+  INNER JOIN users u ON u.id = rh.user_id
+  WHERE rh.rn = 1
+  ORDER BY rh.dump_date ASC, rh.user_id;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
@@ -578,6 +617,7 @@ GRANT EXECUTE ON FUNCTION get_leaderboard_weekly() TO authenticated;
 GRANT EXECUTE ON FUNCTION get_leaderboard_2026() TO authenticated;
 GRANT EXECUTE ON FUNCTION get_leaderboard_ghost_wipes() TO authenticated;
 GRANT EXECUTE ON FUNCTION get_leaderboard_messy_dumps() TO authenticated;
+GRANT EXECUTE ON FUNCTION get_leaderboard_liquid_dumps() TO authenticated;
 GRANT EXECUTE ON FUNCTION get_leaderboard_single_day_record() TO authenticated;
 GRANT EXECUTE ON FUNCTION get_leaderboard_single_location_record() TO authenticated;
 GRANT EXECUTE ON FUNCTION get_leaderboard_avg_per_day() TO authenticated;

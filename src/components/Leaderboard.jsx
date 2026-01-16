@@ -8,6 +8,7 @@ function Leaderboard({ user, onBack }) {
   const [yearly2026Stats, setYearly2026Stats] = useState([])
   const [ghostWipeRecords, setGhostWipeRecords] = useState([])
   const [messyDumpRecords, setMessyDumpRecords] = useState([])
+  const [liquidDumpRecords, setLiquidDumpRecords] = useState([])
   const [singleDayRecords, setSingleDayRecords] = useState([])
   const [singleLocationRecords, setSingleLocationRecords] = useState([])
   const [avgPerDayRecords, setAvgPerDayRecords] = useState([])
@@ -56,6 +57,7 @@ function Leaderboard({ user, onBack }) {
         yearly2026Result,
         ghostWipeResult,
         messyDumpResult,
+        liquidDumpResult,
         singleDayResult,
         singleLocationResult,
         avgPerDayResult,
@@ -65,6 +67,7 @@ function Leaderboard({ user, onBack }) {
         supabase.rpc('get_leaderboard_2026'),
         supabase.rpc('get_leaderboard_ghost_wipes'),
         supabase.rpc('get_leaderboard_messy_dumps'),
+        supabase.rpc('get_leaderboard_liquid_dumps'),
         supabase.rpc('get_leaderboard_single_day_record'),
         supabase.rpc('get_leaderboard_single_location_record'),
         supabase.rpc('get_leaderboard_avg_per_day'),
@@ -75,6 +78,7 @@ function Leaderboard({ user, onBack }) {
       if (yearly2026Result.error) throw yearly2026Result.error
       if (ghostWipeResult.error) throw ghostWipeResult.error
       if (messyDumpResult.error) throw messyDumpResult.error
+      if (liquidDumpResult.error) throw liquidDumpResult.error
       if (singleDayResult.error) throw singleDayResult.error
       if (singleLocationResult.error) throw singleLocationResult.error
       if (avgPerDayResult.error) throw avgPerDayResult.error
@@ -84,6 +88,7 @@ function Leaderboard({ user, onBack }) {
       setYearly2026Stats(yearly2026Result.data || [])
       setGhostWipeRecords(ghostWipeResult.data || [])
       setMessyDumpRecords(messyDumpResult.data || [])
+      setLiquidDumpRecords(liquidDumpResult.data || [])
       setSingleDayRecords(singleDayResult.data || [])
       setSingleLocationRecords(singleLocationResult.data || [])
       setAvgPerDayRecords(avgPerDayResult.data || [])
@@ -356,6 +361,25 @@ function Leaderboard({ user, onBack }) {
                     <div className="leaderboard-info">
                       <div className="leaderboard-name">{formatName(record.first_name, record.last_name)}</div>
                       <div className="leaderboard-count">{record.messy_dump_count} {record.messy_dump_count === 1 ? 'messy dump' : 'messy dumps'}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="record-category">
+            <h3>💧 Most Liquid Dumps</h3>
+            <p className="record-description">When things get a bit runny. These champions aren't afraid to track the liquid side of life. Sometimes you just need to let it flow.</p>
+            {liquidDumpRecords.length === 0 ? (
+              <div className="empty-leaderboard">No liquid dumps recorded</div>
+            ) : (
+              <div className="leaderboard-list records-list single-day-tied">
+                {liquidDumpRecords.map((record) => (
+                  <div key={record.user_id} className="leaderboard-item">
+                    <div className="leaderboard-info">
+                      <div className="leaderboard-name">{formatName(record.first_name, record.last_name)}</div>
+                      <div className="leaderboard-count">{record.liquid_dump_count} {record.liquid_dump_count === 1 ? 'liquid dump' : 'liquid dumps'}</div>
                     </div>
                   </div>
                 ))}

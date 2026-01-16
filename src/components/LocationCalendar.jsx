@@ -183,6 +183,7 @@ function LocationCalendar({ location, user, onClose, onIncrement, onDecrement })
         ghost_wipe: dumpType === 'ghost_wipe',
         messy_dump: dumpType === 'messy_dump',
         classic_dump: dumpType === 'classic_dump',
+        liquid_dump: dumpType === 'liquid_dump',
       }
 
       // If standard, set all to false
@@ -190,6 +191,7 @@ function LocationCalendar({ location, user, onClose, onIncrement, onDecrement })
         updateData.ghost_wipe = false
         updateData.messy_dump = false
         updateData.classic_dump = false
+        updateData.liquid_dump = false
       }
 
       const { error } = await supabase
@@ -315,7 +317,10 @@ function LocationCalendar({ location, user, onClose, onIncrement, onDecrement })
                             {entry.classic_dump && !entry.ghost_wipe && !entry.messy_dump && (
                               <span className="entry-badge classic-dump-badge">🚽 Classic Dump</span>
                             )}
-                            {!entry.ghost_wipe && !entry.messy_dump && !entry.classic_dump && (
+                            {entry.liquid_dump && (
+                              <span className="entry-badge liquid-dump-badge">💧 Liquid Dump</span>
+                            )}
+                            {!entry.ghost_wipe && !entry.messy_dump && !entry.classic_dump && !entry.liquid_dump && (
                               <span className="entry-badge">Standard</span>
                             )}
                           </div>
@@ -378,7 +383,10 @@ function LocationCalendar({ location, user, onClose, onIncrement, onDecrement })
                     {entryToDelete.classic_dump && !entryToDelete.ghost_wipe && !entryToDelete.messy_dump && (
                       <span className="entry-badge classic-dump-badge">🚽 Classic Dump</span>
                     )}
-                    {!entryToDelete.ghost_wipe && !entryToDelete.messy_dump && !entryToDelete.classic_dump && (
+                    {entryToDelete.liquid_dump && (
+                      <span className="entry-badge liquid-dump-badge">💧 Liquid Dump</span>
+                    )}
+                    {!entryToDelete.ghost_wipe && !entryToDelete.messy_dump && !entryToDelete.classic_dump && !entryToDelete.liquid_dump && (
                       <span className="entry-badge">Standard</span>
                     )}
                   </div>
@@ -440,6 +448,13 @@ function LocationCalendar({ location, user, onClose, onIncrement, onDecrement })
                 💩🧻 Messy Dump
               </button>
               <button
+                onClick={() => handleUpdateEntry('liquid_dump')}
+                className={`liquid-dump-button ${entryToEdit.liquid_dump ? 'selected' : ''}`}
+                title="A liquid dump - when things get a bit runny"
+              >
+                💧 Liquid Dump
+              </button>
+              <button
                 onClick={() => handleUpdateEntry('classic_dump')}
                 className={`classic-dump-button ${entryToEdit.classic_dump ? 'selected' : ''}`}
                 title="A classic, standard dump - nothing special, nothing terrible"
@@ -448,7 +463,7 @@ function LocationCalendar({ location, user, onClose, onIncrement, onDecrement })
               </button>
               <button
                 onClick={() => handleUpdateEntry('standard')}
-                className={`skip-button ${!entryToEdit.ghost_wipe && !entryToEdit.messy_dump && !entryToEdit.classic_dump ? 'selected' : ''}`}
+                className={`skip-button ${!entryToEdit.ghost_wipe && !entryToEdit.messy_dump && !entryToEdit.classic_dump && !entryToEdit.liquid_dump ? 'selected' : ''}`}
                 title="Standard dump type"
               >
                 Standard

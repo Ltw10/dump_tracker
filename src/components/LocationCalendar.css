@@ -287,7 +287,12 @@
   color: white;
 }
 
-.entry-badge:not(.ghost-wipe-badge):not(.messy-dump-badge):not(.classic-dump-badge) {
+.liquid-dump-badge {
+  background: linear-gradient(135deg, #4a90e2 0%, #357abd 100%);
+  color: white;
+}
+
+.entry-badge:not(.ghost-wipe-badge):not(.messy-dump-badge):not(.classic-dump-badge):not(.liquid-dump-badge) {
   background: #e0e0e0;
   color: #666;
 }
@@ -620,6 +625,25 @@
   box-shadow: 0 4px 12px rgba(78, 205, 196, 0.4);
 }
 
+.edit-entry-content .liquid-dump-button {
+  width: 100%;
+  padding: 16px;
+  background: linear-gradient(135deg, #4a90e2 0%, #357abd 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 18px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+  position: relative;
+}
+
+.edit-entry-content .liquid-dump-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(74, 144, 226, 0.4);
+}
+
 .edit-entry-content .skip-button {
   width: 100%;
   padding: 12px;
@@ -639,6 +663,7 @@
 .edit-entry-content .ghost-wipe-button.selected,
 .edit-entry-content .messy-dump-button.selected,
 .edit-entry-content .classic-dump-button.selected,
+.edit-entry-content .liquid-dump-button.selected,
 .edit-entry-content .skip-button.selected {
   border: 3px solid #333;
   box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.3);
