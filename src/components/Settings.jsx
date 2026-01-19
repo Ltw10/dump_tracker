@@ -6,6 +6,7 @@ function Settings({ user, onBack }) {
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [leaderboardOptIn, setLeaderboardOptIn] = useState(false)
+  const [locationTrackingOptIn, setLocationTrackingOptIn] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -37,7 +38,7 @@ function Settings({ user, onBack }) {
       
       const { data, error } = await supabase
         .from('users')
-        .select('id, first_name, last_name, leaderboard_opt_in')
+        .select('id, first_name, last_name, leaderboard_opt_in, location_tracking_opt_in')
         .eq('id', userId)
         .single()
 
@@ -53,6 +54,7 @@ function Settings({ user, onBack }) {
       setFirstName(data.first_name ? String(data.first_name).trim() : '')
       setLastName(data.last_name ? String(data.last_name).trim() : '')
       setLeaderboardOptIn(data.leaderboard_opt_in === true)
+      setLocationTrackingOptIn(data.location_tracking_opt_in === true)
     } catch (err) {
       console.error('Error fetching user settings:', err)
       setError(err.message || 'Failed to load settings')
@@ -114,6 +116,7 @@ function Settings({ user, onBack }) {
         first_name: firstNameTrimmed || null,
         last_name: lastNameTrimmed || null,
         leaderboard_opt_in: leaderboardOptIn,
+        location_tracking_opt_in: locationTrackingOptIn,
       }
 
       console.log('Attempting to update user:', userId, 'with data:', updateData)
@@ -122,7 +125,7 @@ function Settings({ user, onBack }) {
         .from('users')
         .update(updateData)
         .eq('id', userId)
-        .select('id, first_name, last_name, leaderboard_opt_in')
+        .select('id, first_name, last_name, leaderboard_opt_in, location_tracking_opt_in')
         .single()
 
       if (error) {
@@ -142,6 +145,7 @@ function Settings({ user, onBack }) {
       setFirstName(data.first_name ? String(data.first_name).trim() : '')
       setLastName(data.last_name ? String(data.last_name).trim() : '')
       setLeaderboardOptIn(data.leaderboard_opt_in === true)
+      setLocationTrackingOptIn(data.location_tracking_opt_in === true)
 
       setSuccess('Settings saved successfully!')
       setTimeout(() => setSuccess(''), 3000)
@@ -233,6 +237,31 @@ function Settings({ user, onBack }) {
                   type="checkbox"
                   checked={leaderboardOptIn}
                   onChange={(e) => handleLeaderboardToggle(e.target.checked)}
+                  className="toggle-input"
+                />
+                <span className="toggle-slider"></span>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <div className="settings-section">
+          <h2>Location Tracking</h2>
+          
+          <div className="toggle-group">
+            <label htmlFor="locationTrackingOptIn" className="toggle-label">
+              <span className="toggle-text">
+                <strong>Enable Location Tracking</strong>
+                <span className="toggle-description">
+                  Allow the app to prompt you to add specific location data (address or GPS coordinates) for your dump locations
+                </span>
+              </span>
+              <div className="toggle-switch">
+                <input
+                  id="locationTrackingOptIn"
+                  type="checkbox"
+                  checked={locationTrackingOptIn}
+                  onChange={(e) => setLocationTrackingOptIn(e.target.checked)}
                   className="toggle-input"
                 />
                 <span className="toggle-slider"></span>

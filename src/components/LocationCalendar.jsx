@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
+import LocationDataModal from './LocationDataModal'
 import './LocationCalendar.css'
 
 function LocationCalendar({ location, user, onClose, onIncrement, onDecrement }) {
@@ -13,12 +14,20 @@ function LocationCalendar({ location, user, onClose, onIncrement, onDecrement })
   const [showEditModal, setShowEditModal] = useState(false)
   const [entryToEdit, setEntryToEdit] = useState(null)
   const [updateError, setUpdateError] = useState('')
+  const [showAddEntryModal, setShowAddEntryModal] = useState(false)
+  const [selectedDateForEntry, setSelectedDateForEntry] = useState(null)
+  const [selectedTime, setSelectedTime] = useState('')
+  const [addEntryError, setAddEntryError] = useState('')
+  const [addEntryLoading, setAddEntryLoading] = useState(false)
+  const [showLocationDataModal, setShowLocationDataModal] = useState(false)
+  const [currentLocation, setCurrentLocation] = useState(location)
 
   useEffect(() => {
     if (location) {
+      setCurrentLocation(location)
       fetchDumpEntries()
     }
-  }, [location?.id, location?.count])
+  }, [location?.id, location?.count, location])
 
   useEffect(() => {
     // Group entries by date (EST)
@@ -90,8 +99,17 @@ function LocationCalendar({ location, user, onClose, onIncrement, onDecrement })
 
   const handleDateClick = (year, month, day) => {
     const dateKey = getDateKey(year, month, day)
-    if (entriesByDate[dateKey] && entriesByDate[dateKey].length > 0) {
+    const hasEntries = entriesByDate[dateKey] && entriesByDate[dateKey].length > 0
+    
+    if (hasEntries) {
+      // Show existing entries
       setSelectedDate({ year, month, day, dateKey })
+    } else {
+      // Show modal to add new entry for this date
+      setSelectedDateForEntry({ year, month, day, dateKey })
+      setShowAddEntryModal(true)
+      setSelectedTime('')
+      setAddEntryError('')
     }
   }
 
@@ -224,6 +242,103 @@ function LocationCalendar({ location, user, onClose, onIncrement, onDecrement })
     setEntryToEdit(null)
   }
 
+  const handleAddEntryForDate = async (dumpType) => {
+    if (!selectedDateForEntry || !selectedTime) {
+      setAddEntryError('Please select a time')
+      return
+    }
+
+    setAddEntryLoading(true)
+    setAddEntryError('')
+
+    try {
+      // Create a date object in EST timezone with the selected date and time
+      const { year, month, day } = selectedDateForEntry
+      const [hours, minutes] = selectedTime.split(':').map(Number)
+      
+      // Format as ISO string with EST timezone offset (-05:00 for EST, -04:00 for EDT)
+      // For simplicity, we'll use -05:00 (EST). PostgreSQL will store it correctly.
+      // Note: This assumes EST. For EDT, it would be -04:00, but EST is more common.
+      const isoString = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00-05:00`
+
+      // Create the dump entry with custom created_at timestamp
+      const entryData = {
+        dump_id: location.id,
+        user_id: user.id,
+        ghost_wipe: dumpType === 'ghost_wipe',
+        messy_dump: dumpType === 'messy_dump',
+        classic_dump: dumpType === 'classic_dump',
+        liquid_dump: dumpType === 'liquid_dump',
+        created_at: isoString,
+      }
+
+      const { error } = await supabase
+        .from('dump_entries')
+        .insert(entryData)
+
+      if (error) throw error
+
+      // Refresh entries after adding
+      await fetchDumpEntries()
+
+      // Close modal and reset state
+      setShowAddEntryModal(false)
+      setSelectedDateForEntry(null)
+      setSelectedTime('')
+      setAddEntryError('')
+
+      // Show the date details with the new entry
+      setSelectedDate(selectedDateForEntry)
+    } catch (err) {
+      console.error('Error adding entry:', err)
+      setAddEntryError(err.message || 'Failed to add dump entry')
+    } finally {
+      setAddEntryLoading(false)
+    }
+  }
+
+  const handleCloseAddEntryModal = () => {
+    setShowAddEntryModal(false)
+    setSelectedDateForEntry(null)
+    setSelectedTime('')
+    setAddEntryError('')
+  }
+
+  const handleLocationDataSave = async (updatedLocation) => {
+    console.log('[LocationCalendar] Location data saved:', updatedLocation)
+    
+    // Fetch the latest location data to ensure we have all fields
+    try {
+      const { data: freshLocation, error } = await supabase
+        .from('dumps')
+        .select('*')
+        .eq('id', updatedLocation.id)
+        .single()
+
+      if (error) {
+        console.error('[LocationCalendar] Error fetching updated location:', error)
+        // Still use the updated location from the modal
+        setCurrentLocation(updatedLocation)
+      } else {
+        console.log('[LocationCalendar] Updated location fetched:', freshLocation)
+        setCurrentLocation(freshLocation)
+      }
+    } catch (err) {
+      console.error('[LocationCalendar] Error in handleLocationDataSave:', err)
+      setCurrentLocation(updatedLocation)
+    }
+    
+    setShowLocationDataModal(false)
+  }
+
+  const handleLocationDataClose = () => {
+    setShowLocationDataModal(false)
+  }
+
+  // Check if location data button should be shown
+  const shouldShowLocationDataButton = currentLocation && 
+    (!currentLocation.location_data_provided || currentLocation.location_data_declined)
+
   const { daysInMonth, startingDayOfWeek, year, month } = getDaysInMonth(currentMonth)
   const monthName = currentMonth.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
 
@@ -234,9 +349,21 @@ function LocationCalendar({ location, user, onClose, onIncrement, onDecrement })
       <div className="location-calendar-content" onClick={(e) => e.stopPropagation()}>
         <button className="modal-close" onClick={onClose}>×</button>
         
-        <h2>{location.location_name}</h2>
+        <div className="location-calendar-header">
+          <h2>{currentLocation?.location_name || location.location_name}</h2>
+          {shouldShowLocationDataButton && (
+            <button
+              onClick={() => setShowLocationDataModal(true)}
+              className="add-location-data-button"
+              title="Add location data (address or GPS coordinates)"
+            >
+              <span>📍</span>
+              <span>Add Location Data</span>
+            </button>
+          )}
+        </div>
         <div className="calendar-total">
-          <span className="calendar-total-number">{location.count}</span>
+          <span className="calendar-total-number">{currentLocation?.count || location.count}</span>
           <span className="calendar-total-label">Total Visits</span>
         </div>
 
@@ -290,14 +417,28 @@ function LocationCalendar({ location, user, onClose, onIncrement, onDecrement })
 
             {selectedDate && selectedDateEntries.length > 0 && (
               <div className="date-details">
-                <h4>
-                  {new Date(selectedDate.year, selectedDate.month, selectedDate.day).toLocaleDateString('en-US', {
-                    weekday: 'long',
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric'
-                  })}
-                </h4>
+                <div className="date-details-header">
+                  <h4>
+                    {new Date(selectedDate.year, selectedDate.month, selectedDate.day).toLocaleDateString('en-US', {
+                      weekday: 'long',
+                      year: 'numeric',
+                      month: 'long',
+                      day: 'numeric'
+                    })}
+                  </h4>
+                  <button
+                    onClick={() => {
+                      setSelectedDateForEntry(selectedDate)
+                      setShowAddEntryModal(true)
+                      setSelectedTime('')
+                      setAddEntryError('')
+                    }}
+                    className="add-entry-button"
+                    title="Add another dump for this date"
+                  >
+                    + Add Entry
+                  </button>
+                </div>
                 <div className="date-entries-list">
                   {selectedDateEntries
                     .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
@@ -471,6 +612,100 @@ function LocationCalendar({ location, user, onClose, onIncrement, onDecrement })
             </div>
           </div>
         </div>
+      )}
+
+      {showAddEntryModal && selectedDateForEntry && (
+        <div className="edit-entry-overlay" onClick={handleCloseAddEntryModal}>
+          <div className="edit-entry-content" onClick={(e) => e.stopPropagation()}>
+            <button className="modal-close" onClick={handleCloseAddEntryModal}>×</button>
+            <div className="wipe-type-icon">➕</div>
+            <h2>Add Dump Entry</h2>
+            <p>
+              {new Date(selectedDateForEntry.year, selectedDateForEntry.month, selectedDateForEntry.day).toLocaleDateString('en-US', {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+              })}
+            </p>
+            <div className="add-entry-time-section">
+              <label htmlFor="entry-time" className="time-label">
+                <strong>Time (Required):</strong>
+              </label>
+              <input
+                id="entry-time"
+                type="time"
+                value={selectedTime}
+                onChange={(e) => {
+                  setSelectedTime(e.target.value)
+                  setAddEntryError('')
+                }}
+                className="time-input"
+                required
+              />
+            </div>
+            {addEntryError && (
+              <div className="error-message" style={{ marginBottom: '15px', padding: '10px', background: '#fee', color: '#c33', borderRadius: '6px', fontSize: '14px' }}>
+                {addEntryError}
+              </div>
+            )}
+            <div className="ghost-wipe-buttons">
+              <button
+                onClick={() => handleAddEntryForDate('ghost_wipe')}
+                className="ghost-wipe-button"
+                disabled={addEntryLoading || !selectedTime}
+                title="A clean wipe with no residue - the perfect dump!"
+              >
+                👻🧻 Ghost Wipe
+              </button>
+              <button
+                onClick={() => handleAddEntryForDate('messy_dump')}
+                className="messy-dump-button"
+                disabled={addEntryLoading || !selectedTime}
+                title="A messy dump that required extra cleanup"
+              >
+                💩🧻 Messy Dump
+              </button>
+              <button
+                onClick={() => handleAddEntryForDate('liquid_dump')}
+                className="liquid-dump-button"
+                disabled={addEntryLoading || !selectedTime}
+                title="A liquid dump - when things get a bit runny"
+              >
+                💧 Liquid Dump
+              </button>
+              <button
+                onClick={() => handleAddEntryForDate('classic_dump')}
+                className="classic-dump-button"
+                disabled={addEntryLoading || !selectedTime}
+                title="A classic, standard dump - nothing special, nothing terrible"
+              >
+                🚽 Classic Old Dump
+              </button>
+              <button
+                onClick={() => handleAddEntryForDate('standard')}
+                className="skip-button"
+                disabled={addEntryLoading || !selectedTime}
+                title="Standard dump type"
+              >
+                Standard
+              </button>
+            </div>
+            {addEntryLoading && (
+              <div style={{ textAlign: 'center', marginTop: '15px', color: '#666' }}>
+                Adding entry...
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {showLocationDataModal && currentLocation && (
+        <LocationDataModal
+          location={currentLocation}
+          onClose={handleLocationDataClose}
+          onSave={handleLocationDataSave}
+        />
       )}
     </div>
   )

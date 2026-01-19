@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "../supabase";
 import "./LoginForm.css";
 
@@ -12,6 +12,30 @@ function LoginForm() {
   const [loading, setLoading] = useState(false);
   const [showVerificationModal, setShowVerificationModal] = useState(false);
   const [registeredEmail, setRegisteredEmail] = useState("");
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetSuccess, setResetSuccess] = useState(false);
+  const [showPasswordResetForm, setShowPasswordResetForm] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordResetLoading, setPasswordResetLoading] = useState(false);
+
+  // Check if we're in a password reset flow
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const isResetFlow = urlParams.get("reset") === "true";
+    
+    // Also check if we have a recovery token in the hash
+    const hashParams = new URLSearchParams(window.location.hash.substring(1));
+    const isRecovery = hashParams.get("type") === "recovery";
+    
+    if (isResetFlow || isRecovery) {
+      setShowPasswordResetForm(true);
+      // Clean up URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -71,6 +95,100 @@ function LoginForm() {
     }
   };
 
+  const handleForgotPassword = async (e) => {
+    e.preventDefault();
+    setError("");
+    setResetLoading(true);
+
+    try {
+      const redirectTo = `${window.location.origin}${window.location.pathname}`;
+      const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, {
+        redirectTo: `${redirectTo}?reset=true`,
+      });
+
+      if (error) throw error;
+
+      setResetSuccess(true);
+    } catch (err) {
+      setError(err.message || "An error occurred");
+    } finally {
+      setResetLoading(false);
+    }
+  };
+
+  const handlePasswordReset = async (e) => {
+    e.preventDefault();
+    setError("");
+
+    if (newPassword !== confirmPassword) {
+      setError("Passwords do not match");
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      setError("Password must be at least 6 characters");
+      return;
+    }
+
+    setPasswordResetLoading(true);
+
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+
+      if (error) throw error;
+
+      // Password updated successfully, reload to get fresh session
+      window.location.reload();
+    } catch (err) {
+      setError(err.message || "An error occurred");
+      setPasswordResetLoading(false);
+    }
+  };
+
+  // Show password reset form if in reset flow
+  if (showPasswordResetForm) {
+    return (
+      <div className="login-container">
+        <div className="login-header">
+          <span className="emoji">🔐</span>
+          <h1>Reset Your Password</h1>
+        </div>
+
+        <form onSubmit={handlePasswordReset} className="login-form">
+          <input
+            type="password"
+            placeholder="New Password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            required
+            minLength={6}
+            autoFocus
+          />
+          <input
+            type="password"
+            placeholder="Confirm New Password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            required
+            minLength={6}
+          />
+
+          {error && <div className="error-message">{error}</div>}
+
+          <button
+            type="submit"
+            disabled={passwordResetLoading}
+            className="submit-button"
+          >
+            {passwordResetLoading ? "Updating..." : "Update Password"}
+          </button>
+        </form>
+      </div>
+    );
+  }
+
   return (
     <div className="login-container">
       <div className="login-header">
@@ -129,12 +247,104 @@ function LoginForm() {
           minLength={6}
         />
 
+        {isLogin && (
+          <button
+            type="button"
+            onClick={() => {
+              setShowForgotPassword(true);
+              setError("");
+              setResetSuccess(false);
+              setResetEmail(email);
+            }}
+            className="forgot-password-link"
+          >
+            Forgot Password?
+          </button>
+        )}
+
         {error && <div className="error-message">{error}</div>}
 
         <button type="submit" disabled={loading} className="submit-button">
           {loading ? "Loading..." : isLogin ? "Login" : "Register"}
         </button>
       </form>
+
+      {showForgotPassword && (
+        <div
+          className="modal-overlay"
+          onClick={() => {
+            setShowForgotPassword(false);
+            setResetEmail("");
+            setResetSuccess(false);
+            setError("");
+          }}
+        >
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <button
+              className="modal-close"
+              onClick={() => {
+                setShowForgotPassword(false);
+                setResetEmail("");
+                setResetSuccess(false);
+                setError("");
+              }}
+            >
+              ×
+            </button>
+            {!resetSuccess ? (
+              <>
+                <div className="modal-icon">🔐</div>
+                <h2>Reset Password</h2>
+                <p>
+                  Enter your email address and we'll send you a link to reset
+                  your password.
+                </p>
+                <form onSubmit={handleForgotPassword} className="login-form">
+                  <input
+                    type="email"
+                    placeholder="Email"
+                    value={resetEmail}
+                    onChange={(e) => setResetEmail(e.target.value)}
+                    required
+                    autoFocus
+                  />
+                  {error && <div className="error-message">{error}</div>}
+                  <button
+                    type="submit"
+                    disabled={resetLoading}
+                    className="modal-button"
+                  >
+                    {resetLoading ? "Sending..." : "Send Reset Link"}
+                  </button>
+                </form>
+              </>
+            ) : (
+              <>
+                <div className="modal-icon">📧</div>
+                <h2>Check Your Email</h2>
+                <p>
+                  We've sent a password reset link to{" "}
+                  <strong>{resetEmail}</strong>
+                </p>
+                <p>
+                  Please check your inbox and click the link to reset your
+                  password.
+                </p>
+                <button
+                  className="modal-button"
+                  onClick={() => {
+                    setShowForgotPassword(false);
+                    setResetEmail("");
+                    setResetSuccess(false);
+                  }}
+                >
+                  Got it!
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {showVerificationModal && (
         <div

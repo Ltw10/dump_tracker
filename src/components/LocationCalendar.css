@@ -28,12 +28,45 @@
   margin: auto;
 }
 
+.location-calendar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+  gap: 12px;
+}
+
 .location-calendar-content h2 {
   color: #333;
   font-size: 24px;
   font-weight: 600;
-  margin-bottom: 10px;
-  text-align: center;
+  margin: 0;
+  flex: 1;
+  text-align: left;
+}
+
+.add-location-data-button {
+  padding: 8px 16px;
+  background: #4CAF50;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: background-color 0.2s;
+  white-space: nowrap;
+}
+
+.add-location-data-button:hover {
+  background-color: #45a049;
+}
+
+.add-location-data-button:active {
+  background-color: #3d8b40;
 }
 
 .calendar-total {
@@ -200,11 +233,35 @@
   border: 1px solid #e0e0e0;
 }
 
+.date-details-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
 .date-details h4 {
   color: #333;
   font-size: 16px;
   font-weight: 600;
-  margin: 0 0 15px 0;
+  margin: 0;
+}
+
+.add-entry-button {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.add-entry-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
 }
 
 .date-entries-list {
@@ -668,6 +725,50 @@
   border: 3px solid #333;
   box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.3);
   transform: scale(1.02);
+}
+
+/* Add Entry Modal Styles */
+.add-entry-time-section {
+  margin: 20px 0;
+  padding: 15px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  text-align: left;
+}
+
+.time-label {
+  display: block;
+  color: #333;
+  font-size: 14px;
+  margin-bottom: 10px;
+}
+
+.time-label strong {
+  color: #666;
+}
+
+.time-input {
+  width: 100%;
+  padding: 12px;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  font-size: 16px;
+  transition: border-color 0.2s;
+}
+
+.time-input:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
+.edit-entry-content .ghost-wipe-button:disabled,
+.edit-entry-content .messy-dump-button:disabled,
+.edit-entry-content .classic-dump-button:disabled,
+.edit-entry-content .liquid-dump-button:disabled,
+.edit-entry-content .skip-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
 }
 
 @media (max-width: 640px) {

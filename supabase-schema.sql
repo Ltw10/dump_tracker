@@ -10,11 +10,15 @@ CREATE TABLE IF NOT EXISTS users (
   first_name TEXT,
   last_name TEXT,
   leaderboard_opt_in BOOLEAN DEFAULT FALSE,
+  location_tracking_opt_in BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- Add comment to document the leaderboard_opt_in field
 COMMENT ON COLUMN users.leaderboard_opt_in IS 'Whether the user has opted in to appear on the leaderboard';
+
+-- Add comment to document the location_tracking_opt_in field
+COMMENT ON COLUMN users.location_tracking_opt_in IS 'Whether the user has opted in to location tracking features';
 
 -- Create dumps table
 CREATE TABLE IF NOT EXISTS dumps (
@@ -22,9 +26,21 @@ CREATE TABLE IF NOT EXISTS dumps (
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   location_name TEXT NOT NULL,
   count INTEGER DEFAULT 1,
+  address TEXT,
+  latitude NUMERIC(10, 8),
+  longitude NUMERIC(11, 8),
+  location_data_provided BOOLEAN DEFAULT FALSE,
+  location_data_declined BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- Add comments to document location tracking fields
+COMMENT ON COLUMN dumps.address IS 'Street address or location description provided by user';
+COMMENT ON COLUMN dumps.latitude IS 'Latitude coordinate if GPS location was provided';
+COMMENT ON COLUMN dumps.longitude IS 'Longitude coordinate if GPS location was provided';
+COMMENT ON COLUMN dumps.location_data_provided IS 'Whether specific location data (address or GPS) has been provided';
+COMMENT ON COLUMN dumps.location_data_declined IS 'Whether user has declined to provide location data for this location';
 
 -- Create index on user_id for faster queries
 CREATE INDEX IF NOT EXISTS idx_dumps_user_id ON dumps(user_id);
@@ -613,6 +629,50 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+-- Function to get most distinct locations
+CREATE OR REPLACE FUNCTION get_leaderboard_distinct_locations()
+RETURNS TABLE (
+  user_id UUID,
+  first_name TEXT,
+  last_name TEXT,
+  distinct_location_count BIGINT
+) AS $$
+BEGIN
+  RETURN QUERY
+  WITH distinct_location_counts AS (
+    SELECT 
+      u.id as user_id,
+      u.first_name,
+      u.last_name,
+      COUNT(DISTINCT d.id)::BIGINT as distinct_location_count
+    FROM users u
+    INNER JOIN dumps d ON d.user_id = u.id
+    INNER JOIN dump_entries de ON de.dump_id = d.id
+    WHERE u.leaderboard_opt_in = TRUE
+      AND u.first_name IS NOT NULL
+      AND u.last_name IS NOT NULL
+      AND u.first_name != ''
+      AND u.last_name != ''
+    GROUP BY u.id, u.first_name, u.last_name
+    HAVING COUNT(DISTINCT d.id) > 0
+  ),
+  top_count AS (
+    SELECT COALESCE(MAX(dlc2.distinct_location_count), 0) as highest_count
+    FROM distinct_location_counts dlc2
+  )
+  SELECT 
+    dlc.user_id,
+    dlc.first_name,
+    dlc.last_name,
+    dlc.distinct_location_count AS distinct_location_count
+  FROM distinct_location_counts dlc
+  CROSS JOIN top_count tc
+  WHERE tc.highest_count > 0
+    AND dlc.distinct_location_count = tc.highest_count
+  ORDER BY (dlc.distinct_location_count) DESC, dlc.first_name, dlc.last_name;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
 -- Grant execute permissions to authenticated users for leaderboard functions
 GRANT EXECUTE ON FUNCTION get_leaderboard_daily() TO authenticated;
 GRANT EXECUTE ON FUNCTION get_leaderboard_weekly() TO authenticated;
@@ -623,4 +683,5 @@ GRANT EXECUTE ON FUNCTION get_leaderboard_liquid_dumps() TO authenticated;
 GRANT EXECUTE ON FUNCTION get_leaderboard_single_day_record() TO authenticated;
 GRANT EXECUTE ON FUNCTION get_leaderboard_single_location_record() TO authenticated;
 GRANT EXECUTE ON FUNCTION get_leaderboard_avg_per_day() TO authenticated;
+GRANT EXECUTE ON FUNCTION get_leaderboard_distinct_locations() TO authenticated;
 

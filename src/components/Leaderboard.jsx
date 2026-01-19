@@ -12,6 +12,7 @@ function Leaderboard({ user, onBack }) {
   const [singleDayRecords, setSingleDayRecords] = useState([])
   const [singleLocationRecords, setSingleLocationRecords] = useState([])
   const [avgPerDayRecords, setAvgPerDayRecords] = useState([])
+  const [distinctLocationsRecords, setDistinctLocationsRecords] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [userOptedIn, setUserOptedIn] = useState(null)
@@ -61,6 +62,7 @@ function Leaderboard({ user, onBack }) {
         singleDayResult,
         singleLocationResult,
         avgPerDayResult,
+        distinctLocationsResult,
       ] = await Promise.all([
         supabase.rpc('get_leaderboard_daily'),
         supabase.rpc('get_leaderboard_weekly'),
@@ -71,6 +73,7 @@ function Leaderboard({ user, onBack }) {
         supabase.rpc('get_leaderboard_single_day_record'),
         supabase.rpc('get_leaderboard_single_location_record'),
         supabase.rpc('get_leaderboard_avg_per_day'),
+        supabase.rpc('get_leaderboard_distinct_locations'),
       ])
 
       if (dailyResult.error) throw dailyResult.error
@@ -82,6 +85,7 @@ function Leaderboard({ user, onBack }) {
       if (singleDayResult.error) throw singleDayResult.error
       if (singleLocationResult.error) throw singleLocationResult.error
       if (avgPerDayResult.error) throw avgPerDayResult.error
+      if (distinctLocationsResult.error) throw distinctLocationsResult.error
 
       setDailyStats(dailyResult.data || [])
       setWeeklyStats(weeklyResult.data || [])
@@ -92,6 +96,7 @@ function Leaderboard({ user, onBack }) {
       setSingleDayRecords(singleDayResult.data || [])
       setSingleLocationRecords(singleLocationResult.data || [])
       setAvgPerDayRecords(avgPerDayResult.data || [])
+      setDistinctLocationsRecords(distinctLocationsResult.data || [])
     } catch (err) {
       console.error('Error fetching leaderboard data:', err)
       setError(err.message || 'Failed to load leaderboard')
@@ -400,6 +405,27 @@ function Leaderboard({ user, onBack }) {
                       <div className="leaderboard-name">{formatName(record.first_name, record.last_name)}</div>
                       <div className="leaderboard-count">
                         {record.dump_count} {record.dump_count === 1 ? 'dump' : 'dumps'} on {formatDate(record.record_date)}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="record-category">
+            <h3>🗺️ Most Distinct Locations</h3>
+            <p className="record-description">These world travelers have logged dumps at the most unique locations. From home to work to that random gas station, they're not afraid to go anywhere nature calls.</p>
+            {distinctLocationsRecords.length === 0 ? (
+              <div className="empty-leaderboard">No distinct location records</div>
+            ) : (
+              <div className="leaderboard-list records-list single-day-tied">
+                {distinctLocationsRecords.map((record) => (
+                  <div key={record.user_id} className="leaderboard-item">
+                    <div className="leaderboard-info">
+                      <div className="leaderboard-name">{formatName(record.first_name, record.last_name)}</div>
+                      <div className="leaderboard-count">
+                        {record.distinct_location_count} {record.distinct_location_count === 1 ? 'location' : 'locations'}
                       </div>
                     </div>
                   </div>

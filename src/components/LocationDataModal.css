@@ -1,0 +1,196 @@
+.location-data-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1000;
+}
+
+.location-data-modal-content {
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 500px;
+  width: 90%;
+  max-height: 90vh;
+  overflow-y: auto;
+  position: relative;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+.location-data-icon {
+  font-size: 48px;
+  text-align: center;
+  margin-bottom: 16px;
+}
+
+.location-data-modal-content h2 {
+  margin: 0 0 8px 0;
+  text-align: center;
+  color: #333;
+}
+
+.location-data-modal-content p {
+  margin: 0 0 24px 0;
+  text-align: center;
+  color: #666;
+  font-size: 14px;
+}
+
+.location-data-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.location-data-form .form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.location-data-form label {
+  font-weight: 500;
+  color: #333;
+  font-size: 14px;
+}
+
+.location-data-form .form-input {
+  padding: 12px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 14px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.location-data-form .form-input:focus {
+  outline: none;
+  border-color: #4CAF50;
+}
+
+.location-data-form .form-input:disabled {
+  background-color: #f5f5f5;
+  cursor: not-allowed;
+}
+
+.gps-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gps-button {
+  padding: 12px 16px;
+  background-color: #2196F3;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.gps-button:hover:not(:disabled) {
+  background-color: #1976D2;
+}
+
+.gps-button:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+}
+
+.gps-confirmation {
+  color: #4CAF50;
+  font-size: 14px;
+  margin: 0;
+  text-align: center;
+}
+
+.location-data-buttons {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.skip-button {
+  flex: 1;
+  padding: 12px;
+  background-color: #f5f5f5;
+  color: #666;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.skip-button:hover:not(:disabled) {
+  background-color: #e0e0e0;
+}
+
+.skip-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.save-location-button {
+  flex: 1;
+  padding: 12px;
+  background-color: #4CAF50;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.save-location-button:hover:not(:disabled) {
+  background-color: #45a049;
+}
+
+.save-location-button:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+}
+
+.error-message {
+  background-color: #ffebee;
+  color: #c62828;
+  padding: 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  margin-top: 8px;
+}
+
+.modal-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: none;
+  border: none;
+  font-size: 28px;
+  color: #999;
+  cursor: pointer;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: background-color 0.2s;
+}
+
+.modal-close:hover {
+  background-color: #f5f5f5;
+}
+

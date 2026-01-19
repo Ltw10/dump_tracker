@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
 import LocationCalendar from './LocationCalendar'
+import LocationDataModal from './LocationDataModal'
 import './Dashboard.css'
 
 function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard }) {
@@ -12,9 +13,14 @@ function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard }) {
   const [showGhostWipeModal, setShowGhostWipeModal] = useState(false)
   const [pendingDumpId, setPendingDumpId] = useState(null)
   const [pendingLocationName, setPendingLocationName] = useState('')
+  const [locationTrackingOptIn, setLocationTrackingOptIn] = useState(false)
+  const [showLocationDataModal, setShowLocationDataModal] = useState(false)
+  const [pendingLocationForData, setPendingLocationForData] = useState(null)
+  const [pendingLocationDataCallback, setPendingLocationDataCallback] = useState(null)
 
   useEffect(() => {
     ensureUserExists()
+    fetchUserLocationTrackingOptIn()
   }, [user])
 
   const ensureUserExists = async () => {
@@ -64,6 +70,25 @@ function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard }) {
     }
   }
 
+  const fetchUserLocationTrackingOptIn = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('location_tracking_opt_in')
+        .eq('id', user.id)
+        .single()
+
+      if (error) {
+        console.error('Error fetching location tracking opt-in:', error)
+        return
+      }
+
+      setLocationTrackingOptIn(data?.location_tracking_opt_in === true)
+    } catch (err) {
+      console.error('Error fetching location tracking opt-in:', err)
+    }
+  }
+
   const handleAddLocation = async (e) => {
     e.preventDefault()
     if (!newLocation.trim()) return
@@ -103,15 +128,34 @@ function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard }) {
 
         if (error) throw error
 
-        // Show modal - entry will be created when user selects an option
-        setPendingDumpId(newDump.id)
-        setPendingLocationName(locationName)
-        setShowGhostWipeModal(true)
+        // If location tracking is enabled, show location data modal first
+        if (locationTrackingOptIn) {
+          setPendingLocationForData(newDump)
+          setPendingLocationDataCallback(() => (updatedLocation) => {
+            // After location data is saved (or skipped), show dump type modal
+            setLocations((prev) => {
+              const updated = prev.map((loc) => loc.id === updatedLocation.id ? updatedLocation : loc)
+              if (!updated.find(loc => loc.id === updatedLocation.id)) {
+                updated.push(updatedLocation)
+              }
+              return updated.sort((a, b) => b.count - a.count)
+            })
+            setPendingDumpId(updatedLocation.id)
+            setPendingLocationName(updatedLocation.location_name)
+            setShowGhostWipeModal(true)
+          })
+          setShowLocationDataModal(true)
+        } else {
+          // Show modal - entry will be created when user selects an option
+          setPendingDumpId(newDump.id)
+          setPendingLocationName(locationName)
+          setShowGhostWipeModal(true)
 
-        setLocations((prev) => {
-          const updated = [newDump, ...prev]
-          return updated.sort((a, b) => b.count - a.count)
-        })
+          setLocations((prev) => {
+            const updated = [newDump, ...prev]
+            return updated.sort((a, b) => b.count - a.count)
+          })
+        }
       }
     } catch (err) {
       setError(err.message || 'Failed to add location')
@@ -124,10 +168,29 @@ function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard }) {
       const location = locations.find((loc) => loc.id === locationId)
       if (!location) return
 
-      // Show modal first - don't create entry yet
-      setPendingDumpId(locationId)
-      setPendingLocationName(location.location_name)
-      setShowGhostWipeModal(true)
+      // Check if location tracking is enabled and location needs data
+      if (locationTrackingOptIn && 
+          !location.location_data_provided && 
+          !location.location_data_declined) {
+        // Show location data modal first
+        setPendingLocationForData(location)
+        setPendingLocationDataCallback(() => (updatedLocation) => {
+          // After location data is saved (or skipped), show dump type modal
+          setLocations((prev) => {
+            const updated = prev.map((loc) => loc.id === updatedLocation.id ? updatedLocation : loc)
+            return updated.sort((a, b) => b.count - a.count)
+          })
+          setPendingDumpId(updatedLocation.id)
+          setPendingLocationName(updatedLocation.location_name)
+          setShowGhostWipeModal(true)
+        })
+        setShowLocationDataModal(true)
+      } else {
+        // Show modal first - don't create entry yet
+        setPendingDumpId(locationId)
+        setPendingLocationName(location.location_name)
+        setShowGhostWipeModal(true)
+      }
     } catch (err) {
       setError(err.message || 'Failed to increment count')
     }
@@ -292,6 +355,45 @@ function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard }) {
     setPendingLocationName('')
   }
 
+  const handleLocationDataSave = (updatedLocation) => {
+    // Update locations list
+    setLocations((prev) => {
+      const updated = prev.map((loc) => loc.id === updatedLocation.id ? updatedLocation : loc)
+      if (!updated.find(loc => loc.id === updatedLocation.id)) {
+        updated.push(updatedLocation)
+      }
+      return updated.sort((a, b) => b.count - a.count)
+    })
+
+    // Update selected location if it's the one being modified
+    if (selectedLocation?.id === updatedLocation.id) {
+      setSelectedLocation(updatedLocation)
+    }
+
+    // Call the callback if one was set
+    if (pendingLocationDataCallback) {
+      pendingLocationDataCallback(updatedLocation)
+      setPendingLocationDataCallback(null)
+    }
+
+    setShowLocationDataModal(false)
+    setPendingLocationForData(null)
+  }
+
+  const handleLocationDataClose = () => {
+    // If there's a callback, we still need to proceed (user skipped)
+    if (pendingLocationDataCallback && pendingLocationForData) {
+      // User closed without saving, but we should still proceed to dump type modal
+      const location = pendingLocationForData
+      setPendingDumpId(location.id)
+      setPendingLocationName(location.location_name)
+      setShowGhostWipeModal(true)
+    }
+    setShowLocationDataModal(false)
+    setPendingLocationForData(null)
+    setPendingLocationDataCallback(null)
+  }
+
   const handleLogout = async () => {
     await supabase.auth.signOut()
   }
@@ -379,6 +481,14 @@ function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard }) {
           onClose={() => setSelectedLocation(null)}
           onIncrement={(locationId) => handleIncrement(locationId)}
           onDecrement={(locationId) => handleDecrement(locationId)}
+        />
+      )}
+
+      {showLocationDataModal && pendingLocationForData && (
+        <LocationDataModal
+          location={pendingLocationForData}
+          onClose={handleLocationDataClose}
+          onSave={handleLocationDataSave}
         />
       )}
 
