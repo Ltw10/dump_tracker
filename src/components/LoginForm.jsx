@@ -20,21 +20,60 @@ function LoginForm() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordResetLoading, setPasswordResetLoading] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(false);
 
-  // Check if we're in a password reset flow
+  // Check if we're in a password reset flow and verify session exists
   useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const isResetFlow = urlParams.get("reset") === "true";
+    const checkResetFlow = async () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const isResetFlow = urlParams.get("reset") === "true";
+      
+      // Also check if we have a recovery token in the hash
+      const hashParams = new URLSearchParams(window.location.hash.substring(1));
+      const isRecovery = hashParams.get("type") === "recovery";
+      const accessToken = hashParams.get("access_token");
+      const refreshToken = hashParams.get("refresh_token");
+      
+      if (isResetFlow || isRecovery) {
+        setCheckingSession(true);
+        
+        // If we have tokens in the hash, set the session first
+        if (isRecovery && accessToken) {
+          try {
+            const { data, error } = await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken || '',
+            });
+
+            if (error) {
+              setError("Invalid or expired reset link. Please request a new password reset.");
+              setCheckingSession(false);
+              return;
+            }
+          } catch (err) {
+            setError("Failed to verify reset link. Please request a new password reset.");
+            setCheckingSession(false);
+            return;
+          }
+        }
+        
+        // Verify we have a valid session before showing the form
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        
+        if (sessionError || !session) {
+          setError("Auth session missing! The reset link may be invalid or expired. Please request a new password reset.");
+          setCheckingSession(false);
+          return;
+        }
+        
+        // Don't clean up URL here - keep ?reset=true so App.jsx knows to show LoginForm
+        // It will be cleaned up after successful password reset
+        setShowPasswordResetForm(true);
+        setCheckingSession(false);
+      }
+    };
     
-    // Also check if we have a recovery token in the hash
-    const hashParams = new URLSearchParams(window.location.hash.substring(1));
-    const isRecovery = hashParams.get("type") === "recovery";
-    
-    if (isResetFlow || isRecovery) {
-      setShowPasswordResetForm(true);
-      // Clean up URL
-      window.history.replaceState({}, document.title, window.location.pathname);
-    }
+    checkResetFlow();
   }, []);
 
   const handleSubmit = async (e) => {
@@ -130,6 +169,15 @@ function LoginForm() {
       return;
     }
 
+    // Verify session exists before attempting to update password
+    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+    
+    if (sessionError || !session) {
+      setError("Auth session missing! The reset link may have expired. Please request a new password reset.");
+      setPasswordResetLoading(false);
+      return;
+    }
+
     setPasswordResetLoading(true);
 
     try {
@@ -139,7 +187,8 @@ function LoginForm() {
 
       if (error) throw error;
 
-      // Password updated successfully, reload to get fresh session
+      // Password updated successfully, clear reset query param and reload to get fresh session
+      window.history.replaceState({}, document.title, window.location.pathname);
       window.location.reload();
     } catch (err) {
       setError(err.message || "An error occurred");
@@ -148,7 +197,7 @@ function LoginForm() {
   };
 
   // Show password reset form if in reset flow
-  if (showPasswordResetForm) {
+  if (checkingSession || showPasswordResetForm) {
     return (
       <div className="login-container">
         <div className="login-header">
@@ -156,35 +205,62 @@ function LoginForm() {
           <h1>Reset Your Password</h1>
         </div>
 
-        <form onSubmit={handlePasswordReset} className="login-form">
-          <input
-            type="password"
-            placeholder="New Password"
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            required
-            minLength={6}
-            autoFocus
-          />
-          <input
-            type="password"
-            placeholder="Confirm New Password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
-            required
-            minLength={6}
-          />
+        {checkingSession ? (
+          <div className="login-form">
+            <div className="loading">Verifying reset link...</div>
+          </div>
+        ) : (
+          <>
+            {error && error.includes("Auth session missing") ? (
+              <div className="login-form">
+                <div className="error-message">{error}</div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPasswordResetForm(false);
+                    setError("");
+                    setNewPassword("");
+                    setConfirmPassword("");
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                  }}
+                  className="submit-button"
+                >
+                  Back to Login
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handlePasswordReset} className="login-form">
+                <input
+                  type="password"
+                  placeholder="New Password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  required
+                  minLength={6}
+                  autoFocus
+                />
+                <input
+                  type="password"
+                  placeholder="Confirm New Password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  minLength={6}
+                />
 
-          {error && <div className="error-message">{error}</div>}
+                {error && <div className="error-message">{error}</div>}
 
-          <button
-            type="submit"
-            disabled={passwordResetLoading}
-            className="submit-button"
-          >
-            {passwordResetLoading ? "Updating..." : "Update Password"}
-          </button>
-        </form>
+                <button
+                  type="submit"
+                  disabled={passwordResetLoading}
+                  className="submit-button"
+                >
+                  {passwordResetLoading ? "Updating..." : "Update Password"}
+                </button>
+              </form>
+            )}
+          </>
+        )}
       </div>
     );
   }

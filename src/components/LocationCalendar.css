@@ -294,6 +294,12 @@
   color: #333;
 }
 
+.date-entry-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
 .edit-entry-button {
   background: #f0f0f0;
   border: none;
@@ -302,7 +308,6 @@
   font-size: 16px;
   cursor: pointer;
   transition: all 0.2s;
-  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -312,6 +317,27 @@
 
 .edit-entry-button:hover {
   background: #e0e0e0;
+  transform: scale(1.1);
+}
+
+.delete-entry-button {
+  background: #fee;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  height: 36px;
+  color: #c33;
+}
+
+.delete-entry-button:hover {
+  background: #fcc;
   transform: scale(1.1);
 }
 
@@ -354,51 +380,6 @@
   color: #666;
 }
 
-.calendar-actions {
-  display: flex;
-  gap: 15px;
-  margin-top: 20px;
-  padding-top: 20px;
-  border-top: 1px solid #f0f0f0;
-}
-
-.calendar-actions .decrement-button,
-.calendar-actions .modal-increment-button {
-  flex: 1;
-  padding: 14px;
-  border: none;
-  border-radius: 8px;
-  font-size: 18px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.calendar-actions .decrement-button {
-  background: #ff6b6b;
-  color: white;
-}
-
-.calendar-actions .decrement-button:hover:not(:disabled) {
-  background: #ee5a5a;
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(255, 107, 107, 0.4);
-}
-
-.calendar-actions .decrement-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.calendar-actions .modal-increment-button {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-}
-
-.calendar-actions .modal-increment-button:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-}
 
 /* Delete Confirmation Modal */
 .delete-confirm-overlay {

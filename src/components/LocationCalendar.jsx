@@ -3,7 +3,7 @@ import { supabase } from '../supabase'
 import LocationDataModal from './LocationDataModal'
 import './LocationCalendar.css'
 
-function LocationCalendar({ location, user, onClose, onIncrement, onDecrement }) {
+function LocationCalendar({ location, user, onClose }) {
   const [dumpEntries, setDumpEntries] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedDate, setSelectedDate] = useState(null)
@@ -121,54 +121,70 @@ function LocationCalendar({ location, user, onClose, onIncrement, onDecrement })
     setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1))
   }
 
-  const handleDecrementClick = async () => {
-    if (!location || location.count <= 0) return
-
-    try {
-      // Find the most recent dump entry
-      const mostRecentEntry = dumpEntries.length > 0 ? dumpEntries[0] : null
-      
-      if (!mostRecentEntry) {
-        // Fallback: fetch it from the database
-        const { data, error } = await supabase
-          .from('dump_entries')
-          .select('*')
-          .eq('dump_id', location.id)
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .single()
-
-        if (error) throw error
-        if (data) {
-          setEntryToDelete(data)
-          setShowDeleteConfirm(true)
-        }
-      } else {
-        setEntryToDelete(mostRecentEntry)
-        setShowDeleteConfirm(true)
-      }
-    } catch (err) {
-      console.error('Error fetching most recent entry:', err)
-    }
+  const handleDeleteEntry = (entry) => {
+    setEntryToDelete(entry)
+    setShowDeleteConfirm(true)
   }
 
   const handleConfirmDelete = async () => {
     if (!entryToDelete) return
 
     try {
-      // Call the parent's decrement handler which will handle the deletion
-      await onDecrement(location.id)
-      
+      // Delete the entry directly
+      const { error } = await supabase
+        .from('dump_entries')
+        .delete()
+        .eq('id', entryToDelete.id)
+        .eq('user_id', user.id)
+
+      if (error) throw error
+
       // Refresh entries after deletion
       await fetchDumpEntries()
-      
+
+      // Fetch updated location to get new count
+      const { data: updatedLocation, error: locationError } = await supabase
+        .from('dumps')
+        .select('*')
+        .eq('id', location.id)
+        .single()
+
+      if (!locationError && updatedLocation) {
+        setCurrentLocation(updatedLocation)
+      }
+
       // Close modal and reset state
       setShowDeleteConfirm(false)
       setEntryToDelete(null)
-      setSelectedDate(null) // Clear selected date if it was showing the deleted entry
+      
+      // If the deleted entry was the last one for this date, clear selected date
+      const deletedEntryDateKey = new Date(entryToDelete.created_at).toLocaleDateString('en-US', {
+        timeZone: 'America/New_York',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      })
+      
+      // Check if there are any remaining entries for this date after deletion
+      const remainingEntries = dumpEntries.filter(e => {
+        if (e.id === entryToDelete.id) return false
+        const entryDateKey = new Date(e.created_at).toLocaleDateString('en-US', {
+          timeZone: 'America/New_York',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
+        })
+        return entryDateKey === deletedEntryDateKey
+      })
+      
+      // If no remaining entries for this date and it's currently selected, clear selection
+      if (remainingEntries.length === 0 && selectedDate?.dateKey === deletedEntryDateKey) {
+        setSelectedDate(null)
+      }
     } catch (err) {
       console.error('Error deleting entry:', err)
+      setShowDeleteConfirm(false)
+      setEntryToDelete(null)
     }
   }
 
@@ -466,34 +482,27 @@ function LocationCalendar({ location, user, onClose, onIncrement, onDecrement })
                             )}
                           </div>
                         </div>
-                        <button
-                          onClick={() => handleEditEntry(entry)}
-                          className="edit-entry-button"
-                          title="Edit dump type"
-                        >
-                          ✏️
-                        </button>
+                        <div className="date-entry-actions">
+                          <button
+                            onClick={() => handleEditEntry(entry)}
+                            className="edit-entry-button"
+                            title="Edit dump type"
+                          >
+                            ✏️
+                          </button>
+                          <button
+                            onClick={() => handleDeleteEntry(entry)}
+                            className="delete-entry-button"
+                            title="Delete this dump entry"
+                          >
+                            🗑️
+                          </button>
+                        </div>
                       </div>
                     ))}
                 </div>
               </div>
             )}
-
-            <div className="calendar-actions">
-              <button
-                onClick={handleDecrementClick}
-                className="decrement-button"
-                disabled={location.count <= 0}
-              >
-                -1
-              </button>
-              <button
-                onClick={() => onIncrement(location.id)}
-                className="modal-increment-button"
-              >
-                +1
-              </button>
-            </div>
           </>
         )}
       </div>
@@ -502,7 +511,7 @@ function LocationCalendar({ location, user, onClose, onIncrement, onDecrement })
         <div className="delete-confirm-overlay" onClick={handleCancelDelete}>
           <div className="delete-confirm-content" onClick={(e) => e.stopPropagation()}>
             <button className="modal-close" onClick={handleCancelDelete}>×</button>
-            <h3>Are you sure you want to remove your most recent dump entry?</h3>
+            <h3>Are you sure you want to delete this dump entry?</h3>
             
             <div className="delete-entry-details">
               <div className="delete-entry-info">

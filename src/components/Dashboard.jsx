@@ -479,8 +479,6 @@ function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard }) {
           location={selectedLocation}
           user={user}
           onClose={() => setSelectedLocation(null)}
-          onIncrement={(locationId) => handleIncrement(locationId)}
-          onDecrement={(locationId) => handleDecrement(locationId)}
         />
       )}
 
