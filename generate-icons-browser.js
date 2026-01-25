@@ -45,30 +45,57 @@ async function generateIcons() {
   await page.setViewport({ width: 512, height: 512 });
 
   for (const size of sizes) {
+    // Add padding for safe area (iOS and Android may apply masks/rounding)
+    const padding = size * 0.1; // 10% padding
+    const emojiSize = size - (padding * 2);
+    
     const html = `
 <!DOCTYPE html>
 <html>
 <head>
+  <meta charset="UTF-8">
   <style>
-    body {
+    * {
       margin: 0;
       padding: 0;
+      box-sizing: border-box;
+    }
+    html, body {
       width: ${size}px;
       height: ${size}px;
+      overflow: hidden;
+    }
+    .container {
+      width: ${size}px;
+      height: ${size}px;
+      background: #ffffff;
       display: flex;
       align-items: center;
       justify-content: center;
-      background: white;
-      font-size: ${Math.floor(size * 0.65)}px;
+      padding: ${padding}px;
+    }
+    .emoji {
+      font-size: ${emojiSize * 0.7}px;
+      line-height: 1;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", sans-serif;
+      text-align: center;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: ${emojiSize}px;
+      height: ${emojiSize}px;
     }
   </style>
 </head>
-<body>🚽</body>
+<body>
+  <div class="container">
+    <div class="emoji">🚽</div>
+  </div>
+</body>
 </html>`;
 
     await page.setContent(html);
-    await page.setViewport({ width: size, height: size });
+    await page.setViewport({ width: size, height: size, deviceScaleFactor: 2 });
 
     const outputPath = path.join(publicDir, `icon-${size}.png`);
     await page.screenshot({
@@ -81,38 +108,73 @@ async function generateIcons() {
   }
 
   // Also generate apple-touch-icon (180x180)
+  // iOS applies rounding and effects, so we need padding (safe area is ~80% of icon)
+  // Use a larger canvas and scale down to ensure quality
+  const iconSize = 180;
+  const padding = iconSize * 0.12; // 12% padding for iOS safe area (less padding = larger emoji)
+  const emojiSize = iconSize - (padding * 2);
+  
   const html180 = `
 <!DOCTYPE html>
 <html>
 <head>
+  <meta charset="UTF-8">
   <style>
-    body {
+    * {
       margin: 0;
       padding: 0;
-      width: 180px;
-      height: 180px;
+      box-sizing: border-box;
+    }
+    html, body {
+      width: ${iconSize}px;
+      height: ${iconSize}px;
+      overflow: hidden;
+      background: #ffffff;
+    }
+    .container {
+      width: ${iconSize}px;
+      height: ${iconSize}px;
+      background: #ffffff;
       display: flex;
       align-items: center;
       justify-content: center;
-      background: white;
-      font-size: 117px;
+      padding: ${padding}px;
+      position: relative;
+    }
+    .emoji {
+      font-size: ${Math.floor(emojiSize * 0.75)}px;
+      line-height: 1;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", sans-serif;
+      text-align: center;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: ${emojiSize}px;
+      height: ${emojiSize}px;
+      color: #000000;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
     }
   </style>
 </head>
-<body>🚽</body>
+<body>
+  <div class="container">
+    <div class="emoji">🚽</div>
+  </div>
+</body>
 </html>`;
 
   await page.setContent(html180);
-  await page.setViewport({ width: 180, height: 180 });
+  await page.setViewport({ width: iconSize, height: iconSize, deviceScaleFactor: 3 });
   const appleIconPath = path.join(publicDir, 'apple-touch-icon.png');
   await page.screenshot({
     path: appleIconPath,
-    width: 180,
-    height: 180,
-    clip: { x: 0, y: 0, width: 180, height: 180 }
+    width: iconSize,
+    height: iconSize,
+    clip: { x: 0, y: 0, width: iconSize, height: iconSize },
+    omitBackground: false
   });
-  console.log('✓ Generated apple-touch-icon.png');
+  console.log('✓ Generated apple-touch-icon.png (with iOS safe area padding)');
 
   await browser.close();
 
