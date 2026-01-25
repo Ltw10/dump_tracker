@@ -104,6 +104,36 @@ npm run build
 
 The built files will be in the `dist` directory.
 
+## Progressive Web App (PWA) Icon
+
+The app is configured as a Progressive Web App with a custom toilet emoji (🚽) icon for iOS and other platforms.
+
+### Icon Setup
+
+The app includes:
+- **Web App Manifest** (`public/manifest.json`) - Defines the PWA metadata and icons
+- **Apple Touch Icon** - Custom icon for iOS home screen
+- **Multiple icon sizes** - 180x180, 192x192, and 512x512 pixels
+
+### Generating Icons
+
+If you need to regenerate the icons, run:
+
+```bash
+npm run generate-icons
+```
+
+This will create PNG icon files in the `public/` directory with the toilet emoji. The icons are automatically included in the build process.
+
+### Adding to Home Screen (iOS)
+
+1. Open the app in Safari on your iPhone
+2. Tap the Share button
+3. Select "Add to Home Screen"
+4. The toilet emoji icon will appear on your home screen
+
+The icons are generated using the `canvas` package and include proper emoji rendering for best compatibility across devices.
+
 ## Deploy to GitHub Pages
 
 This app is configured to deploy automatically to GitHub Pages using GitHub Actions.
