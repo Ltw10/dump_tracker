@@ -4,6 +4,7 @@ import LoginForm from './components/LoginForm'
 import Dashboard from './components/Dashboard'
 import Settings from './components/Settings'
 import Leaderboard from './components/Leaderboard'
+import News from './components/News'
 import './App.css'
 
 function App() {
@@ -97,11 +98,14 @@ function App() {
           <Settings user={user} onBack={() => setCurrentView('dashboard')} />
         ) : currentView === 'leaderboard' ? (
           <Leaderboard user={user} onBack={() => setCurrentView('dashboard')} />
+        ) : currentView === 'news' ? (
+          <News user={user} onBack={() => setCurrentView('dashboard')} />
         ) : (
           <Dashboard 
             user={user} 
             onNavigateToSettings={() => setCurrentView('settings')}
             onNavigateToLeaderboard={() => setCurrentView('leaderboard')}
+            onNavigateToNews={() => setCurrentView('news')}
           />
         )
       ) : (

@@ -4,7 +4,7 @@ import LocationCalendar from './LocationCalendar'
 import LocationDataModal from './LocationDataModal'
 import './Dashboard.css'
 
-function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard }) {
+function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard, onNavigateToNews }) {
   const [locations, setLocations] = useState([])
   const [newLocation, setNewLocation] = useState('')
   const [loading, setLoading] = useState(true)
@@ -416,6 +416,9 @@ function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard }) {
         <div className="header-actions">
           <button onClick={onNavigateToLeaderboard} className="leaderboard-button" title="Leaderboard">
             🏆
+          </button>
+          <button onClick={onNavigateToNews} className="news-button" title="News">
+            📰
           </button>
           <button onClick={onNavigateToSettings} className="settings-button" title="Settings">
             ⚙️

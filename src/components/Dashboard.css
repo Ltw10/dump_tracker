@@ -42,6 +42,7 @@
 }
 
 .leaderboard-button,
+.news-button,
 .settings-button {
   padding: 8px 12px;
   background: #f0f0f0;
@@ -59,6 +60,7 @@
 }
 
 .leaderboard-button:hover,
+.news-button:hover,
 .settings-button:hover {
   background: #e0e0e0;
 }
