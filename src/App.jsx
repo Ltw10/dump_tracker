@@ -5,6 +5,7 @@ import Dashboard from './components/Dashboard'
 import Settings from './components/Settings'
 import Leaderboard from './components/Leaderboard'
 import News from './components/News'
+import Notifications from './components/Notifications'
 import './App.css'
 
 function App() {
@@ -100,12 +101,15 @@ function App() {
           <Leaderboard user={user} onBack={() => setCurrentView('dashboard')} />
         ) : currentView === 'news' ? (
           <News user={user} onBack={() => setCurrentView('dashboard')} />
+        ) : currentView === 'notifications' ? (
+          <Notifications user={user} onBack={() => setCurrentView('dashboard')} />
         ) : (
           <Dashboard 
             user={user} 
             onNavigateToSettings={() => setCurrentView('settings')}
             onNavigateToLeaderboard={() => setCurrentView('leaderboard')}
             onNavigateToNews={() => setCurrentView('news')}
+            onNavigateToNotifications={() => setCurrentView('notifications')}
           />
         )
       ) : (

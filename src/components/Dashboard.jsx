@@ -4,7 +4,7 @@ import LocationCalendar from './LocationCalendar'
 import LocationDataModal from './LocationDataModal'
 import './Dashboard.css'
 
-function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard, onNavigateToNews }) {
+function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard, onNavigateToNews, onNavigateToNotifications }) {
   const [locations, setLocations] = useState([])
   const [newLocation, setNewLocation] = useState('')
   const [loading, setLoading] = useState(true)
@@ -17,6 +17,8 @@ function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard, onNavi
   const [showLocationDataModal, setShowLocationDataModal] = useState(false)
   const [pendingLocationForData, setPendingLocationForData] = useState(null)
   const [pendingLocationDataCallback, setPendingLocationDataCallback] = useState(null)
+  const [editingLocationId, setEditingLocationId] = useState(null)
+  const [editingLocationName, setEditingLocationName] = useState('')
 
   useEffect(() => {
     ensureUserExists()
@@ -394,6 +396,71 @@ function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard, onNavi
     setPendingLocationDataCallback(null)
   }
 
+  const startEditingLocation = (location, e) => {
+    if (e) e.stopPropagation()
+    setEditingLocationId(location.id)
+    setEditingLocationName(location.location_name)
+    setError('')
+  }
+
+  const cancelEditingLocation = (e) => {
+    e?.stopPropagation?.()
+    setEditingLocationId(null)
+    setEditingLocationName('')
+    setError('')
+  }
+
+  const handleSaveLocationName = async (locationId, e) => {
+    e?.stopPropagation?.()
+    const newName = editingLocationName.trim()
+    if (!newName) {
+      cancelEditingLocation()
+      return
+    }
+
+    const location = locations.find((loc) => loc.id === locationId)
+    if (location?.location_name === newName) {
+      cancelEditingLocation()
+      return
+    }
+
+    setError('')
+    try {
+      const { data: existing } = await supabase
+        .from('dumps')
+        .select('id')
+        .eq('user_id', user.id)
+        .ilike('location_name', newName)
+        .neq('id', locationId)
+        .maybeSingle()
+
+      if (existing) {
+        setError(`You already have a location named "${newName}".`)
+        return
+      }
+
+      const { error: updateError } = await supabase
+        .from('dumps')
+        .update({ location_name: newName })
+        .eq('id', locationId)
+        .eq('user_id', user.id)
+
+      if (updateError) throw updateError
+
+      setLocations((prev) =>
+        prev.map((loc) =>
+          loc.id === locationId ? { ...loc, location_name: newName } : loc
+        )
+      )
+      if (selectedLocation?.id === locationId) {
+        setSelectedLocation((prev) => (prev ? { ...prev, location_name: newName } : null))
+      }
+      cancelEditingLocation()
+    } catch (err) {
+      setError(err.message || 'Failed to update location name')
+    }
+  }
+
   const handleLogout = async () => {
     await supabase.auth.signOut()
   }
@@ -416,6 +483,9 @@ function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard, onNavi
         <div className="header-actions">
           <button onClick={onNavigateToLeaderboard} className="leaderboard-button" title="Leaderboard">
             🏆
+          </button>
+          <button onClick={onNavigateToNotifications} className="notifications-button" title="Notifications">
+            🔔
           </button>
           <button onClick={onNavigateToNews} className="news-button" title="News">
             📰
@@ -481,7 +551,16 @@ function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard, onNavi
         <LocationCalendar
           location={selectedLocation}
           user={user}
-          onClose={() => setSelectedLocation(null)}
+          onClose={() => {
+            cancelEditingLocation()
+            setSelectedLocation(null)
+          }}
+          isEditingName={editingLocationId === selectedLocation.id}
+          editingLocationName={editingLocationName}
+          setEditingLocationName={setEditingLocationName}
+          onStartEditName={() => startEditingLocation(selectedLocation)}
+          onSaveLocationName={(e) => handleSaveLocationName(selectedLocation.id, e)}
+          onCancelEditName={cancelEditingLocation}
         />
       )}
 

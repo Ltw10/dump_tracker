@@ -70,6 +70,18 @@ CREATE INDEX IF NOT EXISTS idx_dump_entries_messy_dump ON dump_entries(messy_dum
 CREATE INDEX IF NOT EXISTS idx_dump_entries_classic_dump ON dump_entries(classic_dump) WHERE classic_dump = TRUE;
 CREATE INDEX IF NOT EXISTS idx_dump_entries_liquid_dump ON dump_entries(liquid_dump) WHERE liquid_dump = TRUE;
 
+-- Notifications table (feed of events for opted-in users)
+CREATE TABLE IF NOT EXISTS notifications (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  type TEXT NOT NULL,
+  actor_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  payload JSONB,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_notifications_created_at ON notifications(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notifications_type ON notifications(type);
+
 -- Create function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
@@ -236,6 +248,16 @@ CREATE POLICY "Users can delete own dump entries"
   ON dump_entries FOR DELETE
   USING (auth.uid() = user_id);
 
+-- Enable RLS and policies for notifications (only opted-in users can read)
+ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Opted-in users can view notifications" ON notifications;
+CREATE POLICY "Opted-in users can view notifications"
+  ON notifications FOR SELECT
+  USING (
+    (SELECT leaderboard_opt_in FROM users WHERE id = auth.uid()) = TRUE
+  );
+
 -- Function to sync count from entries
 CREATE OR REPLACE FUNCTION sync_dump_count()
 RETURNS TRIGGER AS $$
@@ -267,6 +289,115 @@ CREATE TRIGGER sync_count_on_delete
   AFTER DELETE ON dump_entries
   FOR EACH ROW
   EXECUTE FUNCTION sync_dump_count();
+
+-- ============================================================================
+-- Notifications: create notification rows when qualifying dump_entries are inserted
+-- ============================================================================
+CREATE OR REPLACE FUNCTION notify_on_dump_entry_insert()
+RETURNS TRIGGER AS $$
+DECLARE
+  u_opt_in BOOLEAN;
+  u_first TEXT;
+  u_last TEXT;
+  loc_name TEXT;
+  entry_count BIGINT;
+  total_2026 BIGINT;
+  ghost_2026 BIGINT;
+  messy_2026 BIGINT;
+  liquid_2026 BIGINT;
+  prev_max_single_day BIGINT;
+  actor_today BIGINT;
+  dump_date DATE;
+BEGIN
+  -- 1. Actor eligibility: leaderboard_opt_in and name set
+  SELECT u.leaderboard_opt_in, u.first_name, u.last_name
+  INTO u_opt_in, u_first, u_last
+  FROM users u
+  WHERE u.id = NEW.user_id;
+
+  IF NOT u_opt_in OR u_first IS NULL OR u_last IS NULL OR TRIM(COALESCE(u_first, '')) = '' OR TRIM(COALESCE(u_last, '')) = '' THEN
+    RETURN NEW;
+  END IF;
+
+  -- 2. First dump at location (count entries for this dump = 1)
+  SELECT COUNT(*) INTO entry_count FROM dump_entries WHERE dump_id = NEW.dump_id;
+  IF entry_count = 1 THEN
+    SELECT location_name INTO loc_name FROM dumps WHERE id = NEW.dump_id;
+    INSERT INTO notifications (type, actor_user_id, payload)
+    VALUES ('first_dump_at_location', NEW.user_id, jsonb_build_object('location_name', loc_name));
+  END IF;
+
+  -- 3. Year-scoped counts for 2026 (America/New_York)
+  SELECT COUNT(*) INTO total_2026
+  FROM dump_entries de
+  WHERE de.user_id = NEW.user_id
+    AND EXTRACT(YEAR FROM (de.created_at AT TIME ZONE 'America/New_York')) = 2026;
+
+  SELECT COUNT(*) INTO ghost_2026
+  FROM dump_entries de
+  WHERE de.user_id = NEW.user_id AND de.ghost_wipe = TRUE
+    AND EXTRACT(YEAR FROM (de.created_at AT TIME ZONE 'America/New_York')) = 2026;
+
+  SELECT COUNT(*) INTO messy_2026
+  FROM dump_entries de
+  WHERE de.user_id = NEW.user_id AND de.messy_dump = TRUE
+    AND EXTRACT(YEAR FROM (de.created_at AT TIME ZONE 'America/New_York')) = 2026;
+
+  SELECT COUNT(*) INTO liquid_2026
+  FROM dump_entries de
+  WHERE de.user_id = NEW.user_id AND de.liquid_dump = TRUE
+    AND EXTRACT(YEAR FROM (de.created_at AT TIME ZONE 'America/New_York')) = 2026;
+
+  -- 4. Milestone notifications (multiples of 10 for special, 100 for total)
+  IF ghost_2026 > 0 AND ghost_2026 % 10 = 0 THEN
+    INSERT INTO notifications (type, actor_user_id, payload)
+    VALUES ('milestone_ghost_wipe', NEW.user_id, jsonb_build_object('milestone_number', ghost_2026));
+  END IF;
+  IF messy_2026 > 0 AND messy_2026 % 10 = 0 THEN
+    INSERT INTO notifications (type, actor_user_id, payload)
+    VALUES ('milestone_messy_dump', NEW.user_id, jsonb_build_object('milestone_number', messy_2026));
+  END IF;
+  IF liquid_2026 > 0 AND liquid_2026 % 10 = 0 THEN
+    INSERT INTO notifications (type, actor_user_id, payload)
+    VALUES ('milestone_liquid_dump', NEW.user_id, jsonb_build_object('milestone_number', liquid_2026));
+  END IF;
+  IF total_2026 > 0 AND total_2026 % 100 = 0 THEN
+    INSERT INTO notifications (type, actor_user_id, payload)
+    VALUES ('milestone_total', NEW.user_id, jsonb_build_object('milestone_number', total_2026));
+  END IF;
+
+  -- 5. Single-day record broken: previous global max (excluding this new row), then actor's today count
+  dump_date := (NEW.created_at AT TIME ZONE 'America/New_York')::DATE;
+
+  SELECT COALESCE(MAX(daily_count), 0) INTO prev_max_single_day
+  FROM (
+    SELECT de.user_id, DATE(de.created_at AT TIME ZONE 'America/New_York') AS d, COUNT(*)::BIGINT AS daily_count
+    FROM dump_entries de
+    INNER JOIN users u ON u.id = de.user_id AND u.leaderboard_opt_in = TRUE
+    WHERE de.id != NEW.id
+    GROUP BY de.user_id, DATE(de.created_at AT TIME ZONE 'America/New_York')
+  ) sub;
+
+  SELECT COUNT(*)::BIGINT INTO actor_today
+  FROM dump_entries de
+  WHERE de.user_id = NEW.user_id
+    AND DATE(de.created_at AT TIME ZONE 'America/New_York') = dump_date;
+
+  IF actor_today > prev_max_single_day THEN
+    INSERT INTO notifications (type, actor_user_id, payload)
+    VALUES ('single_day_record_broken', NEW.user_id, jsonb_build_object('dump_count', actor_today, 'record_date', dump_date::TEXT));
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Run after sync_count_on_insert so dumps.count is updated (trigger name sorts after)
+DROP TRIGGER IF EXISTS z_notify_on_dump_entry_insert ON dump_entries;
+CREATE TRIGGER z_notify_on_dump_entry_insert
+  AFTER INSERT ON dump_entries
+  FOR EACH ROW
+  EXECUTE FUNCTION notify_on_dump_entry_insert();
 
 -- Note: Since we're using Supabase Auth, the auth.uid() function
 -- will automatically return the authenticated user's ID.
@@ -684,4 +815,39 @@ GRANT EXECUTE ON FUNCTION get_leaderboard_single_day_record() TO authenticated;
 GRANT EXECUTE ON FUNCTION get_leaderboard_single_location_record() TO authenticated;
 GRANT EXECUTE ON FUNCTION get_leaderboard_avg_per_day() TO authenticated;
 GRANT EXECUTE ON FUNCTION get_leaderboard_distinct_locations() TO authenticated;
+
+-- ============================================================================
+-- Notifications feed RPC (opt-in users only)
+-- ============================================================================
+CREATE OR REPLACE FUNCTION get_notifications(p_limit INT DEFAULT 50)
+RETURNS TABLE (
+  id UUID,
+  type TEXT,
+  payload JSONB,
+  created_at TIMESTAMP WITH TIME ZONE,
+  first_name TEXT,
+  last_name TEXT
+) AS $$
+BEGIN
+  -- Only return data if caller has leaderboard (and notifications) opt-in
+  IF NOT (SELECT COALESCE(leaderboard_opt_in, FALSE) FROM users WHERE users.id = auth.uid()) THEN
+    RETURN;
+  END IF;
+
+  RETURN QUERY
+  SELECT
+    n.id,
+    n.type,
+    n.payload,
+    n.created_at,
+    u.first_name,
+    u.last_name
+  FROM notifications n
+  INNER JOIN users u ON u.id = n.actor_user_id
+  ORDER BY n.created_at DESC
+  LIMIT p_limit;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+GRANT EXECUTE ON FUNCTION get_notifications(INT) TO authenticated;
 

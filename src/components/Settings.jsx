@@ -228,7 +228,7 @@ function Settings({ user, onBack }) {
               <span className="toggle-text">
                 <strong>Opt in to Dump Tracker Leaderboard</strong>
                 <span className="toggle-description">
-                  Allow your name and stats to appear on the public leaderboard
+                  Allow your name and stats to appear on the leaderboard and in notifications
                 </span>
               </span>
               <div className="toggle-switch">

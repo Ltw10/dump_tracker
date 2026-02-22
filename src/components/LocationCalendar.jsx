@@ -3,7 +3,17 @@ import { supabase } from '../supabase'
 import LocationDataModal from './LocationDataModal'
 import './LocationCalendar.css'
 
-function LocationCalendar({ location, user, onClose }) {
+function LocationCalendar({
+  location,
+  user,
+  onClose,
+  isEditingName = false,
+  editingLocationName = '',
+  setEditingLocationName,
+  onStartEditName,
+  onSaveLocationName,
+  onCancelEditName,
+}) {
   const [dumpEntries, setDumpEntries] = useState([])
   const [loading, setLoading] = useState(true)
   const [selectedDate, setSelectedDate] = useState(null)
@@ -366,8 +376,51 @@ function LocationCalendar({ location, user, onClose }) {
         <button className="modal-close" onClick={onClose}>×</button>
         
         <div className="location-calendar-header">
-          <h2>{currentLocation?.location_name || location.location_name}</h2>
-          {shouldShowLocationDataButton && (
+          {isEditingName ? (
+            <div className="location-calendar-edit-form" onClick={(e) => e.stopPropagation()}>
+              <input
+                type="text"
+                value={editingLocationName}
+                onChange={(e) => setEditingLocationName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') onSaveLocationName(e)
+                  if (e.key === 'Escape') onCancelEditName(e)
+                }}
+                className="location-edit-input"
+                placeholder="Location name"
+                autoFocus
+              />
+              <button
+                type="button"
+                onClick={onSaveLocationName}
+                className="location-edit-save"
+                title="Save"
+              >
+                ✓
+              </button>
+              <button
+                type="button"
+                onClick={onCancelEditName}
+                className="location-edit-cancel"
+                title="Cancel"
+              >
+                ✕
+              </button>
+            </div>
+          ) : (
+            <div className="location-calendar-title-row">
+              <h2>{currentLocation?.location_name || location.location_name}</h2>
+              <button
+                type="button"
+                onClick={onStartEditName}
+                className="location-edit-button"
+                title="Edit location name"
+              >
+                ✏️
+              </button>
+            </div>
+          )}
+          {!isEditingName && shouldShowLocationDataButton && (
             <button
               onClick={() => setShowLocationDataModal(true)}
               className="add-location-data-button"
