@@ -9,6 +9,7 @@ function Leaderboard({ user, onBack }) {
   const [ghostWipeRecords, setGhostWipeRecords] = useState([])
   const [messyDumpRecords, setMessyDumpRecords] = useState([])
   const [liquidDumpRecords, setLiquidDumpRecords] = useState([])
+  const [explosiveDumpRecords, setExplosiveDumpRecords] = useState([])
   const [singleDayRecords, setSingleDayRecords] = useState([])
   const [singleLocationRecords, setSingleLocationRecords] = useState([])
   const [avgPerDayRecords, setAvgPerDayRecords] = useState([])
@@ -24,7 +25,7 @@ function Leaderboard({ user, onBack }) {
   const checkUserOptIn = async () => {
     try {
       const { data, error } = await supabase
-        .from('users')
+        .from('dt_users')
         .select('leaderboard_opt_in')
         .eq('id', user.id)
         .single()
@@ -59,21 +60,23 @@ function Leaderboard({ user, onBack }) {
         ghostWipeResult,
         messyDumpResult,
         liquidDumpResult,
+        explosiveDumpResult,
         singleDayResult,
         singleLocationResult,
         avgPerDayResult,
         distinctLocationsResult,
       ] = await Promise.all([
-        supabase.rpc('get_leaderboard_daily'),
-        supabase.rpc('get_leaderboard_weekly'),
-        supabase.rpc('get_leaderboard_2026'),
-        supabase.rpc('get_leaderboard_ghost_wipes'),
-        supabase.rpc('get_leaderboard_messy_dumps'),
-        supabase.rpc('get_leaderboard_liquid_dumps'),
-        supabase.rpc('get_leaderboard_single_day_record'),
-        supabase.rpc('get_leaderboard_single_location_record'),
-        supabase.rpc('get_leaderboard_avg_per_day'),
-        supabase.rpc('get_leaderboard_distinct_locations'),
+        supabase.rpc('dt_get_leaderboard_daily'),
+        supabase.rpc('dt_get_leaderboard_weekly'),
+        supabase.rpc('dt_get_leaderboard_2026'),
+        supabase.rpc('dt_get_leaderboard_ghost_wipes'),
+        supabase.rpc('dt_get_leaderboard_messy_dumps'),
+        supabase.rpc('dt_get_leaderboard_liquid_dumps'),
+        supabase.rpc('dt_get_leaderboard_explosive_dumps'),
+        supabase.rpc('dt_get_leaderboard_single_day_record'),
+        supabase.rpc('dt_get_leaderboard_single_location_record'),
+        supabase.rpc('dt_get_leaderboard_avg_per_day'),
+        supabase.rpc('dt_get_leaderboard_distinct_locations'),
       ])
 
       if (dailyResult.error) throw dailyResult.error
@@ -82,6 +85,7 @@ function Leaderboard({ user, onBack }) {
       if (ghostWipeResult.error) throw ghostWipeResult.error
       if (messyDumpResult.error) throw messyDumpResult.error
       if (liquidDumpResult.error) throw liquidDumpResult.error
+      if (explosiveDumpResult.error) throw explosiveDumpResult.error
       if (singleDayResult.error) throw singleDayResult.error
       if (singleLocationResult.error) throw singleLocationResult.error
       if (avgPerDayResult.error) throw avgPerDayResult.error
@@ -93,6 +97,7 @@ function Leaderboard({ user, onBack }) {
       setGhostWipeRecords(ghostWipeResult.data || [])
       setMessyDumpRecords(messyDumpResult.data || [])
       setLiquidDumpRecords(liquidDumpResult.data || [])
+      setExplosiveDumpRecords(explosiveDumpResult.data || [])
       setSingleDayRecords(singleDayResult.data || [])
       setSingleLocationRecords(singleLocationResult.data || [])
       setAvgPerDayRecords(avgPerDayResult.data || [])
@@ -385,6 +390,25 @@ function Leaderboard({ user, onBack }) {
                     <div className="leaderboard-info">
                       <div className="leaderboard-name">{formatName(record.first_name, record.last_name)}</div>
                       <div className="leaderboard-count">{record.liquid_dump_count} {record.liquid_dump_count === 1 ? 'liquid dump' : 'liquid dumps'}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="record-category">
+            <h3>💣 Most Explosive Dumps</h3>
+            <p className="record-description">When it really hits. These record-holders aren't shy about the explosive moments. Boom.</p>
+            {explosiveDumpRecords.length === 0 ? (
+              <div className="empty-leaderboard">No explosive dumps recorded</div>
+            ) : (
+              <div className="leaderboard-list records-list single-day-tied">
+                {explosiveDumpRecords.map((record) => (
+                  <div key={record.user_id} className="leaderboard-item">
+                    <div className="leaderboard-info">
+                      <div className="leaderboard-name">{formatName(record.first_name, record.last_name)}</div>
+                      <div className="leaderboard-count">{record.explosive_dump_count} {record.explosive_dump_count === 1 ? 'explosive dump' : 'explosive dumps'}</div>
                     </div>
                   </div>
                 ))}

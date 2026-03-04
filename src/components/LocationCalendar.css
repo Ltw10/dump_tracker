@@ -453,9 +453,67 @@
   color: white;
 }
 
-.entry-badge:not(.ghost-wipe-badge):not(.messy-dump-badge):not(.classic-dump-badge):not(.liquid-dump-badge) {
+.explosive-dump-badge {
+  background: linear-gradient(135deg, #e67e22 0%, #d35400 100%);
+  color: white;
+}
+
+.entry-badge:not(.ghost-wipe-badge):not(.messy-dump-badge):not(.classic-dump-badge):not(.liquid-dump-badge):not(.explosive-dump-badge) {
   background: #e0e0e0;
   color: #666;
+}
+
+/* Dropdown for dump type (edit/add entry modals) - matches Dashboard modal */
+.dump-type-dropdown-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dump-type-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+}
+
+.dump-type-select {
+  width: 100%;
+  padding: 12px 14px;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  font-size: 16px;
+  color: #333;
+  background: white;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.dump-type-select:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
+.dump-type-submit-button {
+  width: 100%;
+  padding: 14px 24px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 18px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.dump-type-submit-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.dump-type-submit-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 

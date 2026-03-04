@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
+import { addressesMatch } from '../utils/addressMatch'
 import LocationCalendar from './LocationCalendar'
 import LocationDataModal from './LocationDataModal'
 import './Dashboard.css'
@@ -19,6 +20,16 @@ function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard, onNavi
   const [pendingLocationDataCallback, setPendingLocationDataCallback] = useState(null)
   const [editingLocationId, setEditingLocationId] = useState(null)
   const [editingLocationName, setEditingLocationName] = useState('')
+  const [selectedDumpType, setSelectedDumpType] = useState('classic_dump')
+  const [showSearchInput, setShowSearchInput] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [showDuplicateLocationModal, setShowDuplicateLocationModal] = useState(false)
+  const [duplicateExistingLocation, setDuplicateExistingLocation] = useState(null) // { id, location_name }
+  const [duplicateNewName, setDuplicateNewName] = useState('')
+  const [duplicateIsExact, setDuplicateIsExact] = useState(false)
+  const [pendingNewLocation, setPendingNewLocation] = useState(null) // { location_name, address?, latitude?, longitude?, location_data_provided?, location_data_declined? } - no DB write until dump type submitted
+  const [showDuplicateAddressModal, setShowDuplicateAddressModal] = useState(false)
+  const [duplicateAddressExistingName, setDuplicateAddressExistingName] = useState('')
 
   useEffect(() => {
     ensureUserExists()
@@ -28,13 +39,13 @@ function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard, onNavi
   const ensureUserExists = async () => {
     try {
       // Call database function to ensure user exists (bypasses RLS)
-      const { error: rpcError } = await supabase.rpc('ensure_user_exists')
+      const { error: rpcError } = await supabase.rpc('dt_ensure_user_exists')
 
       if (rpcError) {
         console.error('Failed to ensure user exists:', rpcError)
         // If the function doesn't exist yet, try the fallback method
         const { data: existingUser } = await supabase
-          .from('users')
+          .from('dt_users')
           .select('id')
           .eq('id', user.id)
           .maybeSingle()
@@ -58,7 +69,7 @@ function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard, onNavi
   const fetchLocations = async () => {
     try {
       const { data, error } = await supabase
-        .from('dumps')
+        .from('dt_locations')
         .select('*')
         .eq('user_id', user.id)
         .order('count', { ascending: false })
@@ -75,7 +86,7 @@ function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard, onNavi
   const fetchUserLocationTrackingOptIn = async () => {
     try {
       const { data, error } = await supabase
-        .from('users')
+        .from('dt_users')
         .select('location_tracking_opt_in')
         .eq('id', user.id)
         .single()
@@ -96,72 +107,122 @@ function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard, onNavi
     if (!newLocation.trim()) return
 
     const locationName = newLocation.trim()
-    setNewLocation('')
     setError('')
 
     try {
       // Ensure user exists before creating dump (call RPC function)
-      await supabase.rpc('ensure_user_exists')
+      await supabase.rpc('dt_ensure_user_exists')
 
-      // Check if location exists (case-insensitive)
+      // Fetch all location names from server so similar check is never stale
+      const { data: allDumps, error: fetchError } = await supabase
+        .from('dt_locations')
+        .select('id, location_name')
+        .eq('user_id', user.id)
+
+      if (fetchError) throw fetchError
+
+      const nameLower = locationName.toLowerCase()
+      const similar = (allDumps || []).find((loc) => {
+        const existing = (loc.location_name || '').trim()
+        if (!existing) return false
+        const existingLower = existing.toLowerCase()
+        if (existingLower === nameLower) return false // exact handled below
+        return nameLower.includes(existingLower) || existingLower.includes(nameLower)
+      })
+      if (similar) {
+        setNewLocation(locationName) // leave text so user can edit
+        setDuplicateExistingLocation({ id: similar.id, location_name: similar.location_name })
+        setDuplicateNewName(locationName)
+        setDuplicateIsExact(false)
+        setShowDuplicateLocationModal(true)
+        return
+      }
+
+      // Check if location exists (case-insensitive exact match)
       const { data: existing } = await supabase
-        .from('dumps')
+        .from('dt_locations')
         .select('*')
         .eq('user_id', user.id)
         .ilike('location_name', locationName)
         .single()
 
       if (existing) {
-        // Show modal first - don't create entry yet
-        setPendingDumpId(existing.id)
-        setPendingLocationName(locationName)
-        setShowGhostWipeModal(true)
-      } else {
-        // Create new location (but don't create entry yet)
-        const { data: newDump, error } = await supabase
-          .from('dumps')
-          .insert({
-            user_id: user.id,
-            location_name: locationName,
-            count: 0, // Start with 0, will be updated when entry is created
-          })
-          .select()
-          .single()
-
-        if (error) throw error
-
-        // If location tracking is enabled, show location data modal first
-        if (locationTrackingOptIn) {
-          setPendingLocationForData(newDump)
-          setPendingLocationDataCallback(() => (updatedLocation) => {
-            // After location data is saved (or skipped), show dump type modal
-            setLocations((prev) => {
-              const updated = prev.map((loc) => loc.id === updatedLocation.id ? updatedLocation : loc)
-              if (!updated.find(loc => loc.id === updatedLocation.id)) {
-                updated.push(updatedLocation)
-              }
-              return updated.sort((a, b) => b.count - a.count)
-            })
-            setPendingDumpId(updatedLocation.id)
-            setPendingLocationName(updatedLocation.location_name)
-            setShowGhostWipeModal(true)
-          })
-          setShowLocationDataModal(true)
-        } else {
-          // Show modal - entry will be created when user selects an option
-          setPendingDumpId(newDump.id)
-          setPendingLocationName(locationName)
-          setShowGhostWipeModal(true)
-
-          setLocations((prev) => {
-            const updated = [newDump, ...prev]
-            return updated.sort((a, b) => b.count - a.count)
-          })
-        }
+        setNewLocation('')
+        setDuplicateExistingLocation({ id: existing.id, location_name: existing.location_name })
+        setDuplicateNewName(locationName)
+        setDuplicateIsExact(true)
+        setShowDuplicateLocationModal(true)
+        return
       }
+
+      startCreateLocationFlow(locationName)
     } catch (err) {
       setError(err.message || 'Failed to add location')
     }
+  }
+
+  const startCreateLocationFlow = (locationName) => {
+    setNewLocation('')
+    setPendingNewLocation({ location_name: locationName })
+    setPendingDumpId(null)
+    setPendingLocationName(locationName)
+    if (locationTrackingOptIn) {
+      setPendingLocationForData(null)
+      setPendingLocationDataCallback(null)
+      setShowLocationDataModal(true)
+    } else {
+      setShowGhostWipeModal(true)
+    }
+  }
+
+  const handleLocationDataSaveForNew = (data) => {
+    setPendingNewLocation((prev) => (prev ? { ...prev, ...data } : null))
+    setShowLocationDataModal(false)
+    setPendingLocationName(pendingNewLocation?.location_name ?? '')
+    setShowGhostWipeModal(true)
+  }
+
+  const handleLocationDataCloseForNew = () => {
+    setPendingNewLocation((prev) => (prev ? { ...prev, location_data_declined: true } : null))
+    setShowLocationDataModal(false)
+    setPendingLocationName(pendingNewLocation?.location_name ?? '')
+    setShowGhostWipeModal(true)
+  }
+
+  const handleDuplicateAddressModalOk = () => {
+    const name = pendingNewLocation?.location_name ?? ''
+    setShowDuplicateAddressModal(false)
+    setDuplicateAddressExistingName('')
+    setShowGhostWipeModal(false)
+    setPendingNewLocation(null)
+    setPendingDumpId(null)
+    setPendingLocationName('')
+    setNewLocation(name)
+  }
+
+  const handleDuplicateModalAddToExisting = () => {
+    if (!duplicateExistingLocation) return
+    setPendingDumpId(duplicateExistingLocation.id)
+    setPendingLocationName(duplicateExistingLocation.location_name)
+    setShowDuplicateLocationModal(false)
+    setDuplicateExistingLocation(null)
+    setDuplicateNewName('')
+    setShowGhostWipeModal(true)
+  }
+
+  const handleDuplicateModalCreateAnyway = () => {
+    const name = duplicateNewName
+    setShowDuplicateLocationModal(false)
+    setDuplicateExistingLocation(null)
+    setDuplicateNewName('')
+    startCreateLocationFlow(name)
+  }
+
+  const handleDuplicateModalCancel = () => {
+    setShowDuplicateLocationModal(false)
+    setDuplicateExistingLocation(null)
+    setDuplicateNewName('')
+    setNewLocation(duplicateNewName) // restore so user can edit
   }
 
   const handleIncrement = async (locationId, e) => {
@@ -198,6 +259,29 @@ function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard, onNavi
     }
   }
 
+  const handleDeleteLocation = async (locationId, e) => {
+    e?.stopPropagation()
+    const location = locations.find((loc) => loc.id === locationId)
+    if (!location || location.count !== 0) return
+    try {
+      const { error } = await supabase
+        .from('dt_locations')
+        .delete()
+        .eq('id', locationId)
+        .eq('user_id', user.id)
+
+      if (error) throw error
+
+      setLocations((prev) => prev.filter((loc) => loc.id !== locationId))
+      if (selectedLocation?.id === locationId) {
+        setSelectedLocation(null)
+        cancelEditingLocation()
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to remove location')
+    }
+  }
+
   const handleDecrement = async (locationId) => {
     try {
       const location = locations.find((loc) => loc.id === locationId)
@@ -208,9 +292,9 @@ function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard, onNavi
 
       // Find and delete the most recent dump entry for this location
       const { data: recentEntry, error: findError } = await supabase
-        .from('dump_entries')
+        .from('dt_entries')
         .select('id')
-        .eq('dump_id', locationId)
+        .eq('location_id', locationId)
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
         .limit(1)
@@ -220,7 +304,7 @@ function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard, onNavi
         // Fallback to old method if dump_entries table doesn't exist yet
         const newCount = location.count - 1
         const { data, error } = await supabase
-          .from('dumps')
+          .from('dt_locations')
           .update({
             count: newCount,
             updated_at: new Date().toISOString(),
@@ -244,7 +328,7 @@ function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard, onNavi
 
       // Delete the most recent entry (this will trigger count sync via trigger)
       const { error: deleteError } = await supabase
-        .from('dump_entries')
+        .from('dt_entries')
         .delete()
         .eq('id', recentEntry.id)
 
@@ -252,7 +336,7 @@ function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard, onNavi
 
       // Fetch updated location after entry is deleted
       const { data, error } = await supabase
-        .from('dumps')
+        .from('dt_locations')
         .select('*')
         .eq('id', locationId)
         .single()
@@ -274,87 +358,123 @@ function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard, onNavi
   }
 
   const createDumpEntry = async (dumpType) => {
-    if (!pendingDumpId) return
+    const isNewLocationFlow = pendingNewLocation != null
+    if (!pendingDumpId && !isNewLocationFlow) return
 
     try {
-      // Create the dump entry with the selected type
+      let dumpIdToUse = pendingDumpId
+
+      if (isNewLocationFlow) {
+        const { location_name, address, latitude, longitude, location_data_provided, location_data_declined } = pendingNewLocation
+
+        if (address && address.trim()) {
+          const { data: userLocations } = await supabase
+            .from('dt_locations')
+            .select('id, location_name, address')
+            .eq('user_id', user.id)
+            .not('address', 'is', null)
+
+          const existingWithAddress = (userLocations || []).find((row) =>
+            addressesMatch(address.trim(), row.address)
+          )
+
+          if (existingWithAddress) {
+            setDuplicateAddressExistingName(existingWithAddress.location_name)
+            setShowDuplicateAddressModal(true)
+            return
+          }
+        }
+
+        const { data: newDump, error: insertDumpError } = await supabase
+          .from('dt_locations')
+          .insert({
+            user_id: user.id,
+            location_name: location_name,
+            count: 0,
+            address: address && address.trim() ? address.trim() : null,
+            latitude: latitude ?? null,
+            longitude: longitude ?? null,
+            location_data_provided: location_data_provided === true,
+            location_data_declined: location_data_declined === true,
+          })
+          .select()
+          .single()
+
+        if (insertDumpError) throw insertDumpError
+        dumpIdToUse = newDump.id
+      }
+
       const entryData = {
-        dump_id: pendingDumpId,
+        location_id: dumpIdToUse,
         user_id: user.id,
         ghost_wipe: dumpType === 'ghost_wipe',
         messy_dump: dumpType === 'messy_dump',
         classic_dump: dumpType === 'classic_dump',
         liquid_dump: dumpType === 'liquid_dump',
+        explosive_dump: dumpType === 'explosive_dump',
       }
 
-      const { data: newEntry, error } = await supabase
-        .from('dump_entries')
+      const { error } = await supabase
+        .from('dt_entries')
         .insert(entryData)
         .select()
         .single()
 
       if (error) throw error
 
-      // Fetch updated location after entry is created (trigger will update count)
       const { data: updatedLocation, error: fetchError } = await supabase
-        .from('dumps')
+        .from('dt_locations')
         .select('*')
-        .eq('id', pendingDumpId)
+        .eq('id', dumpIdToUse)
         .single()
 
       if (fetchError) {
         console.error('Error fetching updated location:', fetchError)
       } else {
-        // Update locations list
         setLocations((prev) => {
-          const updated = prev.map((loc) => (loc.id === pendingDumpId ? updatedLocation : loc))
+          const updated = prev.map((loc) => (loc.id === dumpIdToUse ? updatedLocation : loc))
+          if (!updated.find((loc) => loc.id === dumpIdToUse)) updated.push(updatedLocation)
           return updated.sort((a, b) => b.count - a.count)
         })
-
-        // Update selected location if it's the one being modified
-        if (selectedLocation?.id === pendingDumpId) {
+        if (selectedLocation?.id === dumpIdToUse) {
           setSelectedLocation(updatedLocation)
         }
       }
 
-      // Close modal and reset state
       setShowGhostWipeModal(false)
       setPendingDumpId(null)
       setPendingLocationName('')
+      setPendingNewLocation(null)
     } catch (err) {
       console.error('Error creating dump entry:', err)
       setError(err.message || 'Failed to save dump entry')
       setShowGhostWipeModal(false)
       setPendingDumpId(null)
       setPendingLocationName('')
+      setPendingNewLocation(null)
     }
   }
 
-  const handleGhostWipe = async () => {
-    await createDumpEntry('ghost_wipe')
-  }
+  const DUMP_TYPE_OPTIONS = [
+    { value: 'ghost_wipe', label: '👻 Ghost Wipe' },
+    { value: 'messy_dump', label: '💩 Messy Dump' },
+    { value: 'liquid_dump', label: '💧 Liquid Dump' },
+    { value: 'explosive_dump', label: '💣 Explosive Dump' },
+    { value: 'classic_dump', label: '🚽 Classic Dump' },
+    { value: 'prefer_not_to_say', label: 'Prefer Not To Say' },
+  ]
 
-  const handleMessyDump = async () => {
-    await createDumpEntry('messy_dump')
-  }
-
-  const handleClassicDump = async () => {
-    await createDumpEntry('classic_dump')
-  }
-
-  const handleLiquidDump = async () => {
-    await createDumpEntry('liquid_dump')
-  }
-
-  const handlePreferNotToSay = async () => {
-    await createDumpEntry('prefer_not_to_say')
+  const handleSubmitDumpType = async () => {
+    await createDumpEntry(selectedDumpType)
   }
 
   const handleCloseModal = () => {
-    // Just close the modal without creating any entry
+    const name = pendingNewLocation?.location_name ?? ''
     setShowGhostWipeModal(false)
     setPendingDumpId(null)
     setPendingLocationName('')
+    setPendingNewLocation(null)
+    if (name) setNewLocation(name)
   }
 
   const handleLocationDataSave = (updatedLocation) => {
@@ -427,7 +547,7 @@ function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard, onNavi
     setError('')
     try {
       const { data: existing } = await supabase
-        .from('dumps')
+        .from('dt_locations')
         .select('id')
         .eq('user_id', user.id)
         .ilike('location_name', newName)
@@ -440,7 +560,7 @@ function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard, onNavi
       }
 
       const { error: updateError } = await supabase
-        .from('dumps')
+        .from('dt_locations')
         .update({ location_name: newName })
         .eq('id', locationId)
         .eq('user_id', user.id)
@@ -464,6 +584,11 @@ function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard, onNavi
   const handleLogout = async () => {
     await supabase.auth.signOut()
   }
+
+  const searchQ = searchQuery.trim().toLowerCase()
+  const filteredLocations = searchQ
+    ? locations.filter((loc) => loc.location_name.toLowerCase().includes(searchQ))
+    : locations
 
   if (loading) {
     return (
@@ -507,10 +632,41 @@ function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard, onNavi
           onChange={(e) => setNewLocation(e.target.value)}
           className="location-input"
         />
-        <button type="submit" className="add-button">
-          ➕ Add
-        </button>
+        <div className="add-form-buttons">
+          <button type="submit" className="add-button">
+            ➕ Add
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowSearchInput((v) => !v)}
+            className="search-toggle-button"
+            title="Search locations"
+          >
+            🔍
+          </button>
+        </div>
       </form>
+
+      {showSearchInput && (
+        <div className="search-bar">
+          <input
+            type="text"
+            placeholder="Search locations by name..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="location-input search-input"
+            autoFocus
+          />
+          <button
+            type="button"
+            onClick={() => { setSearchQuery(''); setShowSearchInput(false); }}
+            className="search-close-button"
+            title="Close search"
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {error && <div className="error-message">{error}</div>}
 
@@ -519,9 +675,13 @@ function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard, onNavi
           <div className="empty-state">
             <p>No locations yet. Add your first location above!</p>
           </div>
+        ) : filteredLocations.length === 0 ? (
+          <div className="empty-state">
+            <p>No locations match your search.</p>
+          </div>
         ) : (
-          locations.map((location, index) => {
-            const isTopLocation = index === 0 && locations.length > 0
+          filteredLocations.map((location) => {
+            const isTopLocation = locations.length > 0 && location.id === locations[0].id
             return (
               <div
                 key={location.id}
@@ -535,12 +695,24 @@ function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard, onNavi
                   </span>
                   <span className="location-count">Count: {location.count}</span>
                 </div>
-                <button
-                  onClick={(e) => handleIncrement(location.id, e)}
-                  className="increment-button"
-                >
-                  +1
-                </button>
+                <div className="location-item-actions">
+                  {location.count === 0 && (
+                    <button
+                      type="button"
+                      onClick={(e) => handleDeleteLocation(location.id, e)}
+                      className="delete-location-button"
+                      title="Remove location"
+                    >
+                      Remove
+                    </button>
+                  )}
+                  <button
+                    onClick={(e) => handleIncrement(location.id, e)}
+                    className="increment-button"
+                  >
+                    +1
+                  </button>
+                </div>
               </div>
             )
           })
@@ -564,12 +736,98 @@ function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard, onNavi
         />
       )}
 
-      {showLocationDataModal && pendingLocationForData && (
+      {showLocationDataModal && (pendingLocationForData || pendingNewLocation) && (
         <LocationDataModal
-          location={pendingLocationForData}
-          onClose={handleLocationDataClose}
-          onSave={handleLocationDataSave}
+          location={pendingLocationForData ?? { location_name: pendingNewLocation?.location_name ?? '', id: null }}
+          userId={user.id}
+          onClose={pendingLocationForData ? handleLocationDataClose : handleLocationDataCloseForNew}
+          onSave={pendingLocationForData ? handleLocationDataSave : handleLocationDataSaveForNew}
         />
+      )}
+
+      {showDuplicateLocationModal && duplicateExistingLocation && (
+        <div
+          className="duplicate-location-modal-overlay"
+          onClick={handleDuplicateModalCancel}
+        >
+          <div
+            className="duplicate-location-modal-content"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="modal-close"
+              onClick={handleDuplicateModalCancel}
+              aria-label="Close"
+            >
+              ×
+            </button>
+            <h2>Location Already Exists</h2>
+            <p>
+              {duplicateIsExact
+                ? 'You already have this location:'
+                : 'You already have a similar location:'}
+              <br />
+              <strong>{duplicateExistingLocation.location_name}</strong>
+            </p>
+            <div className="duplicate-location-modal-actions">
+              <button
+                type="button"
+                onClick={handleDuplicateModalAddToExisting}
+                className="duplicate-modal-btn duplicate-modal-btn-primary"
+              >
+                Add dump to {duplicateExistingLocation.location_name}
+              </button>
+              {duplicateIsExact ? (
+                <button
+                  type="button"
+                  onClick={handleDuplicateModalCancel}
+                  className="duplicate-modal-btn duplicate-modal-btn-secondary"
+                >
+                  Cancel
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleDuplicateModalCreateAnyway}
+                  className="duplicate-modal-btn duplicate-modal-btn-secondary"
+                >
+                  Create &quot;{duplicateNewName}&quot; as new location
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDuplicateAddressModal && (
+        <div
+          className="duplicate-location-modal-overlay"
+          onClick={handleDuplicateAddressModalOk}
+        >
+          <div
+            className="duplicate-location-modal-content"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2>Address already in use</h2>
+            <p>
+              This address is already used for:
+              <br />
+              <strong>{duplicateAddressExistingName}</strong>
+              <br />
+              Use that location or choose a different address.
+            </p>
+            <div className="duplicate-location-modal-actions">
+              <button
+                type="button"
+                onClick={handleDuplicateAddressModalOk}
+                className="duplicate-modal-btn duplicate-modal-btn-primary"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {showGhostWipeModal && (
@@ -590,41 +848,24 @@ function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard, onNavi
             <div className="wipe-type-icon">🚽</div>
             <h2>What type of dump?</h2>
             <p>How did this dump go?</p>
-            <div className="ghost-wipe-buttons">
-              <button
-                onClick={handleGhostWipe}
-                className="ghost-wipe-button"
-                title="A clean wipe with no residue - the perfect dump!"
+            <div className="dump-type-dropdown-section">
+              <select
+                id="dump-type-select"
+                aria-label="Dump type"
+                value={selectedDumpType}
+                onChange={(e) => setSelectedDumpType(e.target.value)}
+                className="dump-type-select"
               >
-                👻🧻 Ghost Wipe
-              </button>
+                {DUMP_TYPE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
               <button
-                onClick={handleMessyDump}
-                className="messy-dump-button"
-                title="A messy dump that required extra cleanup"
+                type="button"
+                onClick={handleSubmitDumpType}
+                className="dump-type-submit-button"
               >
-                💩🧻 Messy Dump
-              </button>
-              <button
-                onClick={handleLiquidDump}
-                className="liquid-dump-button"
-                title="A liquid dump - when things get a bit runny"
-              >
-                💧 Liquid Dump
-              </button>
-              <button
-                onClick={handleClassicDump}
-                className="classic-dump-button"
-                title="A classic, standard dump - nothing special, nothing terrible"
-              >
-                🚽 Classic Old Dump
-              </button>
-              <button
-                onClick={handlePreferNotToSay}
-                className="skip-button"
-                title="Don't want to specify the type of dump"
-              >
-                Prefer Not To Say
+                Add dump
               </button>
             </div>
           </div>

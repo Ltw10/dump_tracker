@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '../supabase'
+import { addressesMatch } from '../utils/addressMatch'
 import './LocationDataModal.css'
 
-function LocationDataModal({ location, onClose, onSave }) {
+function LocationDataModal({ location, userId, onClose, onSave }) {
   const [address, setAddress] = useState(location?.address || '')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -233,7 +234,42 @@ function LocationDataModal({ location, onClose, onSave }) {
         }
       }
 
-      // Update location with address and coordinates
+      const isCreateMode = !location?.id
+
+      // Check for duplicate address (normalized: zip then street)
+      if (userId && finalAddress) {
+        const { data: userLocations } = await supabase
+          .from('dt_locations')
+          .select('id, location_name, address')
+          .eq('user_id', userId)
+          .not('address', 'is', null)
+
+        const existingWithAddress = (userLocations || []).find((row) => {
+          if (!isCreateMode && row.id === location.id) return false
+          return addressesMatch(finalAddress, row.address)
+        })
+
+        if (existingWithAddress) {
+          setLoading(false)
+          alert(`You already have this location added with the name: ${existingWithAddress.location_name}.`)
+          return
+        }
+      }
+
+      if (isCreateMode) {
+        onSave({
+          address: finalAddress || null,
+          latitude,
+          longitude,
+          location_data_provided: true,
+          location_data_declined: false,
+        })
+        onClose()
+        setLoading(false)
+        return
+      }
+
+      // Update existing location with address and coordinates
       const updateData = {
         address: finalAddress || null,
         latitude: latitude,
@@ -242,33 +278,15 @@ function LocationDataModal({ location, onClose, onSave }) {
         location_data_declined: false
       }
 
-      console.log('[LocationDataModal] Saving location data:', {
-        locationId: location.id,
-        address: finalAddress,
-        hasCoordinates: latitude !== null && longitude !== null,
-        latitude,
-        longitude
-      })
-
       const { data, error: updateError } = await supabase
-        .from('dumps')
+        .from('dt_locations')
         .update(updateData)
         .eq('id', location.id)
         .select()
         .single()
 
-      if (updateError) {
-        console.error('[LocationDataModal] Database update error:', {
-          error: updateError,
-          message: updateError.message,
-          details: updateError.details,
-          hint: updateError.hint,
-          code: updateError.code
-        })
-        throw updateError
-      }
+      if (updateError) throw updateError
 
-      console.log('[LocationDataModal] Location data saved successfully:', data)
       onSave(data)
       onClose()
     } catch (err) {
@@ -289,9 +307,15 @@ function LocationDataModal({ location, onClose, onSave }) {
     setError('')
 
     try {
-      // Mark location as declined
+      if (!location?.id) {
+        onSave({ location_data_declined: true })
+        onClose()
+        setLoading(false)
+        return
+      }
+
       const { data, error: updateError } = await supabase
-        .from('dumps')
+        .from('dt_locations')
         .update({
           location_data_declined: true,
           location_data_provided: false

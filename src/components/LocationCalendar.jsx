@@ -31,6 +31,17 @@ function LocationCalendar({
   const [addEntryLoading, setAddEntryLoading] = useState(false)
   const [showLocationDataModal, setShowLocationDataModal] = useState(false)
   const [currentLocation, setCurrentLocation] = useState(location)
+  const [editingDumpType, setEditingDumpType] = useState('classic_dump')
+  const [selectedAddEntryType, setSelectedAddEntryType] = useState('classic_dump')
+
+  const DUMP_TYPE_OPTIONS = [
+    { value: 'ghost_wipe', label: '👻 Ghost Wipe' },
+    { value: 'messy_dump', label: '💩 Messy Dump' },
+    { value: 'liquid_dump', label: '💧 Liquid Dump' },
+    { value: 'explosive_dump', label: '💣 Explosive Dump' },
+    { value: 'classic_dump', label: '🚽 Classic Dump' },
+    { value: 'standard', label: 'Standard' },
+  ]
 
   useEffect(() => {
     if (location) {
@@ -38,6 +49,17 @@ function LocationCalendar({
       fetchDumpEntries()
     }
   }, [location?.id, location?.count, location])
+
+  useEffect(() => {
+    if (entryToEdit) {
+      if (entryToEdit.ghost_wipe) setEditingDumpType('ghost_wipe')
+      else if (entryToEdit.messy_dump) setEditingDumpType('messy_dump')
+      else if (entryToEdit.liquid_dump) setEditingDumpType('liquid_dump')
+      else if (entryToEdit.explosive_dump) setEditingDumpType('explosive_dump')
+      else if (entryToEdit.classic_dump) setEditingDumpType('classic_dump')
+      else setEditingDumpType('standard')
+    }
+  }, [entryToEdit])
 
   useEffect(() => {
     // Group entries by date (EST)
@@ -66,9 +88,9 @@ function LocationCalendar({
     try {
       setLoading(true)
       const { data, error } = await supabase
-        .from('dump_entries')
+        .from('dt_entries')
         .select('*')
-        .eq('dump_id', location.id)
+        .eq('location_id', location.id)
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
 
@@ -142,7 +164,7 @@ function LocationCalendar({
     try {
       // Delete the entry directly
       const { error } = await supabase
-        .from('dump_entries')
+        .from('dt_entries')
         .delete()
         .eq('id', entryToDelete.id)
         .eq('user_id', user.id)
@@ -154,7 +176,7 @@ function LocationCalendar({
 
       // Fetch updated location to get new count
       const { data: updatedLocation, error: locationError } = await supabase
-        .from('dumps')
+        .from('dt_locations')
         .select('*')
         .eq('id', location.id)
         .single()
@@ -228,6 +250,7 @@ function LocationCalendar({
         messy_dump: dumpType === 'messy_dump',
         classic_dump: dumpType === 'classic_dump',
         liquid_dump: dumpType === 'liquid_dump',
+        explosive_dump: dumpType === 'explosive_dump',
       }
 
       // If standard, set all to false
@@ -236,10 +259,11 @@ function LocationCalendar({
         updateData.messy_dump = false
         updateData.classic_dump = false
         updateData.liquid_dump = false
+        updateData.explosive_dump = false
       }
 
       const { error } = await supabase
-        .from('dump_entries')
+        .from('dt_entries')
         .update(updateData)
         .eq('id', entryToEdit.id)
         .eq('user_id', user.id)
@@ -289,17 +313,18 @@ function LocationCalendar({
 
       // Create the dump entry with custom created_at timestamp
       const entryData = {
-        dump_id: location.id,
+        location_id: location.id,
         user_id: user.id,
         ghost_wipe: dumpType === 'ghost_wipe',
         messy_dump: dumpType === 'messy_dump',
         classic_dump: dumpType === 'classic_dump',
         liquid_dump: dumpType === 'liquid_dump',
+        explosive_dump: dumpType === 'explosive_dump',
         created_at: isoString,
       }
 
       const { error } = await supabase
-        .from('dump_entries')
+        .from('dt_entries')
         .insert(entryData)
 
       if (error) throw error
@@ -336,7 +361,7 @@ function LocationCalendar({
     // Fetch the latest location data to ensure we have all fields
     try {
       const { data: freshLocation, error } = await supabase
-        .from('dumps')
+        .from('dt_locations')
         .select('*')
         .eq('id', updatedLocation.id)
         .single()
@@ -530,7 +555,10 @@ function LocationCalendar({
                             {entry.liquid_dump && (
                               <span className="entry-badge liquid-dump-badge">💧 Liquid Dump</span>
                             )}
-                            {!entry.ghost_wipe && !entry.messy_dump && !entry.classic_dump && !entry.liquid_dump && (
+                            {entry.explosive_dump && (
+                              <span className="entry-badge explosive-dump-badge">💣 Explosive Dump</span>
+                            )}
+                            {!entry.ghost_wipe && !entry.messy_dump && !entry.classic_dump && !entry.liquid_dump && !entry.explosive_dump && (
                               <span className="entry-badge">Standard</span>
                             )}
                           </div>
@@ -589,7 +617,10 @@ function LocationCalendar({
                     {entryToDelete.liquid_dump && (
                       <span className="entry-badge liquid-dump-badge">💧 Liquid Dump</span>
                     )}
-                    {!entryToDelete.ghost_wipe && !entryToDelete.messy_dump && !entryToDelete.classic_dump && !entryToDelete.liquid_dump && (
+                    {entryToDelete.explosive_dump && (
+                      <span className="entry-badge explosive-dump-badge">💣 Explosive Dump</span>
+                    )}
+                    {!entryToDelete.ghost_wipe && !entryToDelete.messy_dump && !entryToDelete.classic_dump && !entryToDelete.liquid_dump && !entryToDelete.explosive_dump && (
                       <span className="entry-badge">Standard</span>
                     )}
                   </div>
@@ -635,41 +666,24 @@ function LocationCalendar({
                 {updateError}
               </div>
             )}
-            <div className="ghost-wipe-buttons">
-              <button
-                onClick={() => handleUpdateEntry('ghost_wipe')}
-                className={`ghost-wipe-button ${entryToEdit.ghost_wipe ? 'selected' : ''}`}
-                title="A clean wipe with no residue - the perfect dump!"
+            <div className="dump-type-dropdown-section">
+              <label htmlFor="edit-dump-type-select" className="dump-type-label">Type</label>
+              <select
+                id="edit-dump-type-select"
+                value={editingDumpType}
+                onChange={(e) => setEditingDumpType(e.target.value)}
+                className="dump-type-select"
               >
-                👻🧻 Ghost Wipe
-              </button>
+                {DUMP_TYPE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
               <button
-                onClick={() => handleUpdateEntry('messy_dump')}
-                className={`messy-dump-button ${entryToEdit.messy_dump ? 'selected' : ''}`}
-                title="A messy dump that required extra cleanup"
+                type="button"
+                onClick={() => handleUpdateEntry(editingDumpType)}
+                className="dump-type-submit-button"
               >
-                💩🧻 Messy Dump
-              </button>
-              <button
-                onClick={() => handleUpdateEntry('liquid_dump')}
-                className={`liquid-dump-button ${entryToEdit.liquid_dump ? 'selected' : ''}`}
-                title="A liquid dump - when things get a bit runny"
-              >
-                💧 Liquid Dump
-              </button>
-              <button
-                onClick={() => handleUpdateEntry('classic_dump')}
-                className={`classic-dump-button ${entryToEdit.classic_dump ? 'selected' : ''}`}
-                title="A classic, standard dump - nothing special, nothing terrible"
-              >
-                🚽 Classic Old Dump
-              </button>
-              <button
-                onClick={() => handleUpdateEntry('standard')}
-                className={`skip-button ${!entryToEdit.ghost_wipe && !entryToEdit.messy_dump && !entryToEdit.classic_dump && !entryToEdit.liquid_dump ? 'selected' : ''}`}
-                title="Standard dump type"
-              >
-                Standard
+                Save
               </button>
             </div>
           </div>
@@ -711,46 +725,25 @@ function LocationCalendar({
                 {addEntryError}
               </div>
             )}
-            <div className="ghost-wipe-buttons">
-              <button
-                onClick={() => handleAddEntryForDate('ghost_wipe')}
-                className="ghost-wipe-button"
-                disabled={addEntryLoading || !selectedTime}
-                title="A clean wipe with no residue - the perfect dump!"
+            <div className="dump-type-dropdown-section">
+              <label htmlFor="add-entry-type-select" className="dump-type-label">Type</label>
+              <select
+                id="add-entry-type-select"
+                value={selectedAddEntryType}
+                onChange={(e) => setSelectedAddEntryType(e.target.value)}
+                className="dump-type-select"
               >
-                👻🧻 Ghost Wipe
-              </button>
+                {DUMP_TYPE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
               <button
-                onClick={() => handleAddEntryForDate('messy_dump')}
-                className="messy-dump-button"
+                type="button"
+                onClick={() => handleAddEntryForDate(selectedAddEntryType)}
+                className="dump-type-submit-button"
                 disabled={addEntryLoading || !selectedTime}
-                title="A messy dump that required extra cleanup"
               >
-                💩🧻 Messy Dump
-              </button>
-              <button
-                onClick={() => handleAddEntryForDate('liquid_dump')}
-                className="liquid-dump-button"
-                disabled={addEntryLoading || !selectedTime}
-                title="A liquid dump - when things get a bit runny"
-              >
-                💧 Liquid Dump
-              </button>
-              <button
-                onClick={() => handleAddEntryForDate('classic_dump')}
-                className="classic-dump-button"
-                disabled={addEntryLoading || !selectedTime}
-                title="A classic, standard dump - nothing special, nothing terrible"
-              >
-                🚽 Classic Old Dump
-              </button>
-              <button
-                onClick={() => handleAddEntryForDate('standard')}
-                className="skip-button"
-                disabled={addEntryLoading || !selectedTime}
-                title="Standard dump type"
-              >
-                Standard
+                Add entry
               </button>
             </div>
             {addEntryLoading && (
@@ -765,6 +758,7 @@ function LocationCalendar({
       {showLocationDataModal && currentLocation && (
         <LocationDataModal
           location={currentLocation}
+          userId={user?.id}
           onClose={handleLocationDataClose}
           onSave={handleLocationDataSave}
         />

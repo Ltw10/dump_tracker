@@ -37,7 +37,7 @@ function Settings({ user, onBack }) {
       const userId = authUser.id
       
       const { data, error } = await supabase
-        .from('users')
+        .from('dt_users')
         .select('id, first_name, last_name, leaderboard_opt_in, location_tracking_opt_in')
         .eq('id', userId)
         .single()
@@ -122,7 +122,7 @@ function Settings({ user, onBack }) {
       console.log('Attempting to update user:', userId, 'with data:', updateData)
 
       const { data, error } = await supabase
-        .from('users')
+        .from('dt_users')
         .update(updateData)
         .eq('id', userId)
         .select('id, first_name, last_name, leaderboard_opt_in, location_tracking_opt_in')

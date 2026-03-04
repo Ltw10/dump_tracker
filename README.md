@@ -4,16 +4,18 @@ A simple web app to track bathroom visits by location name. Add custom locations
 
 ## Features
 
-- ✅ Simple text-based location names
-- ✅ Automatic duplicate detection (case-insensitive matching)
-- ✅ Quick +1 increment buttons
-- ✅ Shows total count per location
-- ✅ Locations sorted by highest count
-- ✅ 💩 Emoji badge on top-ranked location
-- ✅ Email verification flow
-- ✅ Clean, minimal interface
-- ✅ User authentication with Supabase
-- ✅ Row Level Security for data privacy
+- **Locations & counts**
+  - Simple text-based location names with case-insensitive duplicate detection
+  - Quick +1 increment and decrement (removes most recent entry)
+  - Locations sorted by highest count; 💩 badge on top-ranked location
+- **Dump types** (per log): Classic, Ghost Wipe 👻, Messy 💩, Liquid 💧, Explosive 💣 — chosen when adding or incrementing
+- **Calendar** view per location to see history and counts by day
+- **Optional location data** (address or GPS) per location when opted in
+- **Leaderboard** (opt-in): Total dumps, plus specialty leaderboards (ghost wipes, messy, liquid, explosive)
+- **Notifications** (opt-in): Feed of milestones (e.g. first dump at location, 50/100/150… at a location, specialty and total milestones, single-day record) with filters and pagination
+- **News** and **Settings** (leaderboard opt-in, location tracking opt-in, name)
+- **Auth & security**: Email verification, Supabase Auth, Row Level Security (RLS)
+- **PWA**: Add to home screen with custom icon
 
 ## Setup Instructions
 
@@ -27,10 +29,8 @@ npm install
 
 1. Create a new project at [supabase.com](https://supabase.com)
 2. Go to the SQL Editor in your Supabase dashboard
-3. Run the SQL from `supabase-schema.sql` to create the tables and set up Row Level Security
-4. **Important**: If you're setting up an existing database or need to fix RLS issues, also run:
-   - `supabase-migration-fix-rls.sql` - Fixes user registration RLS policy issues
-   - `supabase-migration-add-ensure-user.sql` - Adds function to ensure user records exist
+3. Run the SQL from `db/supabase-schema.sql` to create the tables and set up Row Level Security
+4. **Important**: If you're setting up an existing database or need to fix RLS issues, also run the relevant migration(s) from the `db/` folder (e.g. migrations for RLS fixes or user-existence functions).
 5. Go to Settings > API to get your project URL and anon key
 6. Enable email authentication in Authentication > Providers > Email
 7. **Configure Redirect URLs** (Important for email verification):
@@ -71,30 +71,44 @@ The app will be available at `http://localhost:5173` (or the port Vite assigns).
 
 ## How It Works
 
-1. **Register/Login**: 
-   - Users can create an account with email and password
-   - After registration, users are redirected to login and shown a modal prompting email verification
-   - Users must verify their email before they can log in
-2. **Add Location**: Type a location name and press Enter or click Add
-   - If the location already exists (case-insensitive), it increments the count
-   - If it's new, it creates it with count = 1
-3. **Increment**: Click the +1 button next to any location to increment its count
-4. **View**: 
-   - See all your locations sorted by highest count
-   - The location with the highest count displays a 💩 emoji badge
-   - Locations automatically re-sort when counts change
+1. **Register/Login**  
+   Create an account with email and password. Email verification is required before logging in; password reset is supported via email link.
+
+2. **Dashboard**  
+   - **Add location**: Type a name and press Enter or click Add. If it already exists (case-insensitive), you’re prompted to choose a dump type and it increments; otherwise a new location is created.
+   - **Increment**: Click +1 next to a location, choose dump type (Classic, Ghost Wipe, Messy, Liquid, Explosive), and confirm.
+   - **Decrement**: Removes the most recent dump entry for that location.
+   - **Calendar**: Open a location’s calendar to see counts by day.
+   - **Location data**: If you’ve opted in (Settings), you can optionally add address or GPS for a location.
+
+3. **Leaderboard** (opt-in in Settings)  
+   View top users by total dumps and by specialty (ghost wipes, messy, liquid, explosive). Requires first and last name and leaderboard opt-in.
+
+4. **Notifications** (same opt-in as leaderboard)  
+   Feed of milestones (first dump at a location, every 50 dumps at a location, yearly specialty/total milestones, single-day records). Filter by All, Specialty, Total, or Location; 10 per page.
+
+5. **News**  
+   In-app news/announcements.
+
+6. **Settings**  
+   Set first/last name, leaderboard (and notifications) opt-in, and location tracking opt-in.
 
 ## Database Schema
 
-- **users**: Stores user account information (linked to `auth.users`)
-- **dumps**: Stores location visit counts per user
+All Dump Tracker objects use the **`dt_`** prefix so the app can share a database with other projects.
 
-### Key Database Features
+- **dt_users** – App user profile (id matches `auth.users`), `leaderboard_opt_in`, `location_tracking_opt_in`, name
+- **dt_locations** – One row per user per location: `location_name`, `count`, optional `address` / `latitude` / `longitude`
+- **dt_entries** – One row per logged dump: `location_id` → `dt_locations`, flags for `ghost_wipe`, `messy_dump`, `classic_dump`, `liquid_dump`, `explosive_dump`; used for decrement and leaderboards
+- **dt_notifications** – Feed rows: `type`, `actor_user_id`, `payload` (JSON), created by triggers on insert into `dt_entries`
 
-- **Row Level Security (RLS)**: Ensures users can only see and modify their own data
-- **Automatic User Creation**: Trigger creates user records when auth users sign up
-- **Foreign Key Constraints**: Ensures data integrity between users and dumps
-- **Automatic Timestamps**: `created_at` and `updated_at` are managed automatically
+RPCs: `dt_ensure_user_exists`, `dt_get_notifications`, `dt_get_leaderboard_*`. See `db/supabase-schema.sql` and `db/migration-dump-tracker-prefix.sql` for existing DBs.
+
+### Key Database Behavior
+
+- **RLS**: Users can only access their own `dumps` and `dump_entries`; notifications are read via RPC for opted-in users.
+- **Triggers**: User creation on signup; `dumps.count` synced from `dump_entries`; notifications for first dump at location, every 50 at a location, yearly milestones (e.g. 10th ghost wipe, 100th total), single-day record.
+- **RPCs**: e.g. `get_notifications`, `ensure_user_exists`, leaderboard functions for total and each specialty. Schema and migrations live in `db/` (see [AGENTS.md](AGENTS.md) for conventions).
 
 ## Build for Production
 
@@ -194,26 +208,42 @@ npm run build
 dump_tracker/
 ├── src/
 │   ├── components/
-│   │   ├── Dashboard.jsx      # Main dashboard with location list
+│   │   ├── Dashboard.jsx       # Main dashboard: locations, +1/−1, dump-type modal
 │   │   ├── Dashboard.css
-│   │   ├── LoginForm.jsx     # Login/Register forms
+│   │   ├── LocationCalendar.jsx # Per-location calendar view
+│   │   ├── LocationCalendar.css
+│   │   ├── LocationDataModal.jsx # Address/GPS for a location
+│   │   ├── LocationDataModal.css
+│   │   ├── Leaderboard.jsx      # Leaderboard (total + specialty)
+│   │   ├── Leaderboard.css
+│   │   ├── Notifications.jsx    # Notifications feed (filters, pagination)
+│   │   ├── Notifications.css
+│   │   ├── News.jsx
+│   │   ├── News.css
+│   │   ├── Settings.jsx
+│   │   ├── Settings.css
+│   │   ├── LoginForm.jsx        # Login, register, password reset
 │   │   └── LoginForm.css
-│   ├── App.jsx               # Main app component
-│   ├── supabase.js           # Supabase client configuration
-│   └── main.jsx              # App entry point
-├── supabase-schema.sql       # Complete database schema
-├── supabase-migration-fix-rls.sql      # Migration for RLS fixes
-├── supabase-migration-add-ensure-user.sql  # Migration for user existence function
+│   ├── App.jsx                 # View state (dashboard/settings/leaderboard/news/notifications)
+│   ├── App.css
+│   ├── supabase.js             # Supabase client
+│   ├── main.jsx
+│   └── index.css
+├── db/
+│   ├── supabase-schema.sql     # Full schema (tables, RLS, triggers, RPCs)
+│   └── migration-*.sql          # Per-feature migrations (run in Supabase SQL Editor)
+├── public/                     # PWA manifest, icons
+├── .github/workflows/          # e.g. GitHub Pages deploy
 └── package.json
 ```
 
 ## Troubleshooting
 
 ### "new row violates row-level security policy" error
-- Run `supabase-migration-fix-rls.sql` to set up the user creation trigger
+- Run the relevant RLS migration from the `db/` folder to set up the user creation trigger
 
 ### "foreign key constraint" error when creating dumps
-- Run `supabase-migration-add-ensure-user.sql` to add the `ensure_user_exists()` function
+- Run the relevant migration from `db/` that adds the `ensure_user_exists()` function
 - The app will automatically call this function, but you can also call it manually via RPC
 
 ### Email verification not working
@@ -221,7 +251,7 @@ dump_tracker/
 - Ensure email provider is enabled
 - Check your email spam folder
 
-## License
+## Documentation for contributors
 
-This project is open source and available for personal use.
+- **[AGENTS.md](AGENTS.md)** – Guidelines for agents and contributors: database conventions (`db/` schema and migrations), feature/UI patterns, and when to update the README.
 
