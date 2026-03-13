@@ -6,6 +6,7 @@ const FILTER_OPTIONS = [
   { value: 'all', label: 'All' },
   { value: 'specialty', label: 'Specialty dumps' },
   { value: 'total', label: 'Total dumps' },
+  { value: 'wipes', label: 'Wipes' },
   { value: 'location', label: 'Location' },
 ]
 
@@ -93,6 +94,7 @@ function Notifications({ user, onBack }) {
     if (filter === 'all') return notifications
     if (filter === 'specialty') return notifications.filter((n) => SPECIALTY_TYPES.includes(n.type))
     if (filter === 'total') return notifications.filter((n) => n.type === 'milestone_total')
+    if (filter === 'wipes') return notifications.filter((n) => n.type === 'milestone_wipes')
     if (filter === 'location') return notifications.filter((n) => n.type === 'first_dump_at_location' || n.type === 'milestone_location_50')
     return notifications
   })()
@@ -127,6 +129,8 @@ function Notifications({ user, onBack }) {
         return `${name} logged their ${payload.milestone_number || 10}th explosive dump of the year.`
       case 'milestone_total':
         return `${name} has logged their ${payload.milestone_number || 100}th dump of the year.`
+      case 'milestone_wipes':
+        return `${name} has reached ${payload.milestone_number || 500} total wipes!`
       case 'single_day_record_broken':
         return `${name} broke the single-day record with ${payload.dump_count || 0} dumps on ${payload.record_date || 'today'}.`
       default:

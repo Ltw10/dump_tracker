@@ -776,6 +776,22 @@
   border-color: #667eea;
 }
 
+.wipes-input {
+  width: 100%;
+  padding: 12px 14px;
+  border: 2px solid #e0e0e0;
+  border-radius: 8px;
+  font-size: 16px;
+  color: #333;
+  background: white;
+  box-sizing: border-box;
+}
+
+.wipes-input:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
 .dump-type-submit-button {
   width: 100%;
   padding: 14px 24px;

@@ -21,6 +21,7 @@ function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard, onNavi
   const [editingLocationId, setEditingLocationId] = useState(null)
   const [editingLocationName, setEditingLocationName] = useState('')
   const [selectedDumpType, setSelectedDumpType] = useState('classic_dump')
+  const [wipeCountInput, setWipeCountInput] = useState('')
   const [showSearchInput, setShowSearchInput] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [showDuplicateLocationModal, setShowDuplicateLocationModal] = useState(false)
@@ -404,6 +405,9 @@ function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard, onNavi
         dumpIdToUse = newDump.id
       }
 
+      const wipesNum = wipeCountInput.trim() === '' ? null : parseInt(wipeCountInput.trim(), 10)
+      const wipes = (wipesNum != null && !Number.isNaN(wipesNum) && wipesNum > 0) ? wipesNum : null
+
       const entryData = {
         location_id: dumpIdToUse,
         user_id: user.id,
@@ -412,6 +416,7 @@ function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard, onNavi
         classic_dump: dumpType === 'classic_dump',
         liquid_dump: dumpType === 'liquid_dump',
         explosive_dump: dumpType === 'explosive_dump',
+        ...(wipes != null && { wipes }),
       }
 
       const { error } = await supabase
@@ -445,6 +450,7 @@ function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard, onNavi
       setPendingDumpId(null)
       setPendingLocationName('')
       setPendingNewLocation(null)
+      setWipeCountInput('')
     } catch (err) {
       console.error('Error creating dump entry:', err)
       setError(err.message || 'Failed to save dump entry')
@@ -452,6 +458,7 @@ function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard, onNavi
       setPendingDumpId(null)
       setPendingLocationName('')
       setPendingNewLocation(null)
+      setWipeCountInput('')
     }
   }
 
@@ -474,6 +481,7 @@ function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard, onNavi
     setPendingDumpId(null)
     setPendingLocationName('')
     setPendingNewLocation(null)
+    setWipeCountInput('')
     if (name) setNewLocation(name)
   }
 
@@ -860,6 +868,20 @@ function Dashboard({ user, onNavigateToSettings, onNavigateToLeaderboard, onNavi
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
                 ))}
               </select>
+              <input
+                id="wipes-input"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                placeholder="# of wipes (optional) ex. 3"
+                value={wipeCountInput}
+                onChange={(e) => {
+                  const v = e.target.value.replace(/\D/g, '')
+                  setWipeCountInput(v)
+                }}
+                className="wipes-input"
+                aria-label="# of wipes (optional) ex. 3"
+              />
               <button
                 type="button"
                 onClick={handleSubmitDumpType}

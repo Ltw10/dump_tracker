@@ -32,7 +32,19 @@ function LocationCalendar({
   const [showLocationDataModal, setShowLocationDataModal] = useState(false)
   const [currentLocation, setCurrentLocation] = useState(location)
   const [editingDumpType, setEditingDumpType] = useState('classic_dump')
+  const [editingTime, setEditingTime] = useState('') // HH:mm (EST) for time input
+  const [editingWipes, setEditingWipes] = useState('')
   const [selectedAddEntryType, setSelectedAddEntryType] = useState('classic_dump')
+  const [addEntryWipes, setAddEntryWipes] = useState('')
+
+  /** Format ISO timestamp to time value (HH:mm) in EST */
+  const formatTimeForInput = (isoString) => {
+    if (!isoString) return ''
+    const d = new Date(isoString)
+    const h = String(d.toLocaleString('en-US', { timeZone: 'America/New_York', hour: 'numeric', hour12: false })).padStart(2, '0')
+    const min = String(d.toLocaleString('en-US', { timeZone: 'America/New_York', minute: 'numeric' })).padStart(2, '0')
+    return `${h}:${min}`
+  }
 
   const DUMP_TYPE_OPTIONS = [
     { value: 'ghost_wipe', label: '👻 Ghost Wipe' },
@@ -58,6 +70,8 @@ function LocationCalendar({
       else if (entryToEdit.explosive_dump) setEditingDumpType('explosive_dump')
       else if (entryToEdit.classic_dump) setEditingDumpType('classic_dump')
       else setEditingDumpType('standard')
+      setEditingTime(formatTimeForInput(entryToEdit.created_at))
+      setEditingWipes(entryToEdit.wipes != null ? String(entryToEdit.wipes) : '')
     }
   }, [entryToEdit])
 
@@ -141,6 +155,7 @@ function LocationCalendar({
       setSelectedDateForEntry({ year, month, day, dateKey })
       setShowAddEntryModal(true)
       setSelectedTime('')
+      setAddEntryWipes('')
       setAddEntryError('')
     }
   }
@@ -262,6 +277,23 @@ function LocationCalendar({
         updateData.explosive_dump = false
       }
 
+      // Include updated time (date unchanged) if user edited it (EST)
+      if (editingTime && editingTime.trim()) {
+        const d = new Date(entryToEdit.created_at)
+        const y = d.toLocaleString('en-US', { timeZone: 'America/New_York', year: 'numeric' })
+        const mo = String(d.toLocaleString('en-US', { timeZone: 'America/New_York', month: 'numeric' })).padStart(2, '0')
+        const day = String(d.toLocaleString('en-US', { timeZone: 'America/New_York', day: 'numeric' })).padStart(2, '0')
+        updateData.created_at = `${y}-${mo}-${day}T${editingTime.trim()}:00-05:00`
+      }
+
+      const wipesTrim = editingWipes.trim()
+      if (wipesTrim === '') {
+        updateData.wipes = null
+      } else {
+        const wipesNum = parseInt(wipesTrim, 10)
+        if (!Number.isNaN(wipesNum) && wipesNum > 0) updateData.wipes = wipesNum
+      }
+
       const { error } = await supabase
         .from('dt_entries')
         .update(updateData)
@@ -311,7 +343,9 @@ function LocationCalendar({
       // Note: This assumes EST. For EDT, it would be -04:00, but EST is more common.
       const isoString = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00-05:00`
 
-      // Create the dump entry with custom created_at timestamp
+      const wipesNum = addEntryWipes.trim() === '' ? null : parseInt(addEntryWipes.trim(), 10)
+      const wipes = (wipesNum != null && !Number.isNaN(wipesNum) && wipesNum > 0) ? wipesNum : null
+
       const entryData = {
         location_id: location.id,
         user_id: user.id,
@@ -321,6 +355,7 @@ function LocationCalendar({
         liquid_dump: dumpType === 'liquid_dump',
         explosive_dump: dumpType === 'explosive_dump',
         created_at: isoString,
+        ...(wipes != null && { wipes }),
       }
 
       const { error } = await supabase
@@ -336,6 +371,7 @@ function LocationCalendar({
       setShowAddEntryModal(false)
       setSelectedDateForEntry(null)
       setSelectedTime('')
+      setAddEntryWipes('')
       setAddEntryError('')
 
       // Show the date details with the new entry
@@ -352,6 +388,7 @@ function LocationCalendar({
     setShowAddEntryModal(false)
     setSelectedDateForEntry(null)
     setSelectedTime('')
+    setAddEntryWipes('')
     setAddEntryError('')
   }
 
@@ -525,6 +562,7 @@ function LocationCalendar({
                       setSelectedDateForEntry(selectedDate)
                       setShowAddEntryModal(true)
                       setSelectedTime('')
+                      setAddEntryWipes('')
                       setAddEntryError('')
                     }}
                     className="add-entry-button"
@@ -541,6 +579,9 @@ function LocationCalendar({
                         <div className="date-entry-info">
                           <div className="date-entry-time">
                             {formatToEST(entry.created_at)} EST
+                            {entry.wipes != null && entry.wipes > 0 && (
+                              <span className="date-entry-wipes"> · {entry.wipes} {entry.wipes === 1 ? 'wipe' : 'wipes'}</span>
+                            )}
                           </div>
                           <div className="date-entry-badges">
                             {entry.ghost_wipe && (
@@ -651,15 +692,20 @@ function LocationCalendar({
           <div className="edit-entry-content" onClick={(e) => e.stopPropagation()}>
             <button className="modal-close" onClick={handleCloseEditModal}>×</button>
             <div className="wipe-type-icon">✏️</div>
-            <h2>Edit Dump Type</h2>
-            <p>Change the type for this dump entry</p>
+            <h2>Edit Dump Entry</h2>
+            <p>Change the type and/or time for this dump entry</p>
             <div className="edit-entry-info">
-              <div className="edit-entry-time">
-                <strong>Time:</strong> {formatToEST(entryToEdit.created_at)} EST
-              </div>
               <div className="edit-entry-date">
                 <strong>Date:</strong> {formatDateToEST(entryToEdit.created_at)}
               </div>
+              <label htmlFor="edit-time" className="dump-type-label">Time (EST)</label>
+              <input
+                id="edit-time"
+                type="time"
+                value={editingTime}
+                onChange={(e) => setEditingTime(e.target.value)}
+                className="edit-timestamp-input"
+              />
             </div>
             {updateError && (
               <div className="error-message" style={{ marginBottom: '15px', padding: '10px', background: '#fee', color: '#c33', borderRadius: '6px', fontSize: '14px' }}>
@@ -667,9 +713,9 @@ function LocationCalendar({
               </div>
             )}
             <div className="dump-type-dropdown-section">
-              <label htmlFor="edit-dump-type-select" className="dump-type-label">Type</label>
               <select
                 id="edit-dump-type-select"
+                aria-label="Dump type"
                 value={editingDumpType}
                 onChange={(e) => setEditingDumpType(e.target.value)}
                 className="dump-type-select"
@@ -678,6 +724,17 @@ function LocationCalendar({
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
                 ))}
               </select>
+              <input
+                id="edit-wipes"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                placeholder="# of wipes (optional) ex. 3"
+                value={editingWipes}
+                onChange={(e) => setEditingWipes(e.target.value.replace(/\D/g, ''))}
+                className="edit-timestamp-input"
+                aria-label="# of wipes (optional) ex. 3"
+              />
               <button
                 type="button"
                 onClick={() => handleUpdateEntry(editingDumpType)}
@@ -737,6 +794,17 @@ function LocationCalendar({
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
                 ))}
               </select>
+              <input
+                id="add-entry-wipes"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                placeholder="# of wipes (optional) ex. 3"
+                value={addEntryWipes}
+                onChange={(e) => setAddEntryWipes(e.target.value.replace(/\D/g, ''))}
+                className="edit-timestamp-input"
+                aria-label="# of wipes (optional) ex. 3"
+              />
               <button
                 type="button"
                 onClick={() => handleAddEntryForDate(selectedAddEntryType)}

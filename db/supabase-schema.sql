@@ -52,10 +52,12 @@ CREATE TABLE IF NOT EXISTS dt_entries (
   classic_dump BOOLEAN DEFAULT FALSE,
   liquid_dump BOOLEAN DEFAULT FALSE,
   explosive_dump BOOLEAN DEFAULT FALSE,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  wipes INTEGER
 );
 
 ALTER TABLE dt_entries ADD COLUMN IF NOT EXISTS explosive_dump BOOLEAN DEFAULT FALSE;
+ALTER TABLE dt_entries ADD COLUMN IF NOT EXISTS wipes INTEGER;
 CREATE INDEX IF NOT EXISTS idx_dt_entries_explosive_dump ON dt_entries(explosive_dump) WHERE explosive_dump = TRUE;
 
 CREATE INDEX IF NOT EXISTS idx_dt_entries_location_id ON dt_entries(location_id);
@@ -276,6 +278,9 @@ DECLARE
   actor_today BIGINT;
   dump_date DATE;
   location_count_at_loc BIGINT;
+  total_wipe_count BIGINT;
+  total_wipe_prev BIGINT;
+  milestone_m BIGINT;
 BEGIN
   SELECT u.leaderboard_opt_in, u.first_name, u.last_name
   INTO u_opt_in, u_first, u_last
@@ -385,6 +390,25 @@ BEGIN
     );
   END IF;
 
+  -- Wipes milestone: fire when user crosses a 500 boundary (e.g. 494 -> 506 triggers 500)
+  SELECT COALESCE(SUM(COALESCE(de.wipes, 0)), 0)::BIGINT INTO total_wipe_count
+  FROM dt_entries de
+  WHERE de.user_id = NEW.user_id;
+  total_wipe_prev := total_wipe_count - COALESCE(NEW.wipes, 0);
+  milestone_m := 500;
+  WHILE milestone_m <= total_wipe_count LOOP
+    IF total_wipe_prev < milestone_m THEN
+      INSERT INTO dt_notifications (type, actor_user_id, payload)
+      SELECT 'milestone_wipes', NEW.user_id, jsonb_build_object('milestone_number', milestone_m)
+      WHERE NOT EXISTS (
+        SELECT 1 FROM dt_notifications n
+        WHERE n.actor_user_id = NEW.user_id AND n.type = 'milestone_wipes'
+          AND (n.payload->>'milestone_number')::BIGINT = milestone_m
+      );
+    END IF;
+    milestone_m := milestone_m + 500;
+  END LOOP;
+
   dump_date := (NEW.created_at AT TIME ZONE 'America/New_York')::DATE;
 
   SELECT COALESCE(MAX(daily_count), 0) INTO prev_max_single_day
@@ -420,6 +444,42 @@ CREATE TRIGGER dt_z_notify_on_entry_insert
   AFTER INSERT ON dt_entries
   FOR EACH ROW
   EXECUTE FUNCTION dt_notify_on_entry_insert();
+
+-- Wipes milestone on UPDATE when wipes column changes (fire when crossing 500 boundary)
+CREATE OR REPLACE FUNCTION dt_check_wipes_milestone_on_update()
+RETURNS TRIGGER AS $$
+DECLARE
+  total_wipe_count BIGINT;
+  total_wipe_prev BIGINT;
+  milestone_m BIGINT;
+BEGIN
+  SELECT COALESCE(SUM(COALESCE(de.wipes, 0)), 0)::BIGINT INTO total_wipe_count
+  FROM dt_entries de
+  WHERE de.user_id = NEW.user_id;
+  total_wipe_prev := total_wipe_count - COALESCE(NEW.wipes, 0) + COALESCE(OLD.wipes, 0);
+  milestone_m := 500;
+  WHILE milestone_m <= total_wipe_count LOOP
+    IF total_wipe_prev < milestone_m THEN
+      INSERT INTO dt_notifications (type, actor_user_id, payload)
+      SELECT 'milestone_wipes', NEW.user_id, jsonb_build_object('milestone_number', milestone_m)
+      WHERE NOT EXISTS (
+        SELECT 1 FROM dt_notifications n
+        WHERE n.actor_user_id = NEW.user_id AND n.type = 'milestone_wipes'
+          AND (n.payload->>'milestone_number')::BIGINT = milestone_m
+      );
+    END IF;
+    milestone_m := milestone_m + 500;
+  END LOOP;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS dt_notify_on_entry_update_wipes ON dt_entries;
+CREATE TRIGGER dt_notify_on_entry_update_wipes
+  AFTER UPDATE ON dt_entries
+  FOR EACH ROW
+  WHEN (OLD.wipes IS DISTINCT FROM NEW.wipes)
+  EXECUTE FUNCTION dt_check_wipes_milestone_on_update();
 
 -- Note: dt_users.id matches auth.users.id. The app creates a dt_users row when a user registers (trigger or dt_ensure_user_exists).
 
@@ -685,6 +745,89 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+-- Max wipes in a single dump (only entries with wipes set, leaderboard_opt_in)
+CREATE OR REPLACE FUNCTION dt_get_leaderboard_max_wipes()
+RETURNS TABLE (
+  user_id UUID,
+  first_name TEXT,
+  last_name TEXT,
+  max_wipes BIGINT
+) AS $$
+BEGIN
+  RETURN QUERY
+  WITH user_max AS (
+    SELECT
+      de.user_id,
+      MAX(de.wipes)::BIGINT AS max_wipes
+    FROM dt_entries de
+    INNER JOIN dt_users u ON u.id = de.user_id
+    WHERE u.leaderboard_opt_in = TRUE
+      AND u.first_name IS NOT NULL
+      AND u.last_name IS NOT NULL
+      AND TRIM(COALESCE(u.first_name, '')) != ''
+      AND TRIM(COALESCE(u.last_name, '')) != ''
+      AND de.wipes IS NOT NULL
+      AND de.wipes > 0
+    GROUP BY de.user_id
+  ),
+  global_max AS (
+    SELECT COALESCE(MAX(um.max_wipes), 0) AS m FROM user_max um
+  )
+  SELECT
+    u.id,
+    u.first_name,
+    u.last_name,
+    um.max_wipes
+  FROM dt_users u
+  INNER JOIN user_max um ON um.user_id = u.id
+  CROSS JOIN global_max gm
+  WHERE gm.m > 0 AND um.max_wipes = gm.m
+  ORDER BY um.max_wipes DESC, u.first_name, u.last_name;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Most 1-wipe dumps (count of entries where wipes = 1)
+CREATE OR REPLACE FUNCTION dt_get_leaderboard_one_wipe_dumps()
+RETURNS TABLE (
+  user_id UUID,
+  first_name TEXT,
+  last_name TEXT,
+  one_wipe_count BIGINT
+) AS $$
+BEGIN
+  RETURN QUERY
+  WITH one_wipe_counts AS (
+    SELECT
+      u.id AS user_id,
+      u.first_name,
+      u.last_name,
+      COUNT(de.id)::BIGINT AS one_wipe_count
+    FROM dt_users u
+    INNER JOIN dt_entries de ON de.user_id = u.id
+    WHERE u.leaderboard_opt_in = TRUE
+      AND u.first_name IS NOT NULL
+      AND u.last_name IS NOT NULL
+      AND TRIM(COALESCE(u.first_name, '')) != ''
+      AND TRIM(COALESCE(u.last_name, '')) != ''
+      AND de.wipes = 1
+    GROUP BY u.id, u.first_name, u.last_name
+    HAVING COUNT(de.id) > 0
+  ),
+  top_count AS (
+    SELECT COALESCE(MAX(owc2.one_wipe_count), 0) AS highest FROM one_wipe_counts owc2
+  )
+  SELECT
+    owc.user_id,
+    owc.first_name,
+    owc.last_name,
+    owc.one_wipe_count
+  FROM one_wipe_counts owc
+  CROSS JOIN top_count tc
+  WHERE tc.highest > 0 AND owc.one_wipe_count = tc.highest
+  ORDER BY owc.one_wipe_count DESC, owc.first_name, owc.last_name;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
 CREATE OR REPLACE FUNCTION dt_get_leaderboard_single_day_record()
 RETURNS TABLE (
   user_id UUID,
@@ -864,6 +1007,8 @@ GRANT EXECUTE ON FUNCTION dt_get_leaderboard_ghost_wipes() TO authenticated;
 GRANT EXECUTE ON FUNCTION dt_get_leaderboard_messy_dumps() TO authenticated;
 GRANT EXECUTE ON FUNCTION dt_get_leaderboard_liquid_dumps() TO authenticated;
 GRANT EXECUTE ON FUNCTION dt_get_leaderboard_explosive_dumps() TO authenticated;
+GRANT EXECUTE ON FUNCTION dt_get_leaderboard_max_wipes() TO authenticated;
+GRANT EXECUTE ON FUNCTION dt_get_leaderboard_one_wipe_dumps() TO authenticated;
 GRANT EXECUTE ON FUNCTION dt_get_leaderboard_single_day_record() TO authenticated;
 GRANT EXECUTE ON FUNCTION dt_get_leaderboard_single_location_record() TO authenticated;
 GRANT EXECUTE ON FUNCTION dt_get_leaderboard_avg_per_day() TO authenticated;
