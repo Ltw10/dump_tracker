@@ -15,7 +15,8 @@ function Leaderboard({ user, onBack }) {
   const [avgPerDayRecords, setAvgPerDayRecords] = useState([])
   const [distinctLocationsRecords, setDistinctLocationsRecords] = useState([])
   const [maxWipesRecords, setMaxWipesRecords] = useState([])
-  const [oneWipeDumpsRecords, setOneWipeDumpsRecords] = useState([])
+  const [totalWipesRecords, setTotalWipesRecords] = useState([])
+  const [weeklyWipesTop3, setWeeklyWipesTop3] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [userOptedIn, setUserOptedIn] = useState(null)
@@ -68,7 +69,8 @@ function Leaderboard({ user, onBack }) {
         avgPerDayResult,
         distinctLocationsResult,
         maxWipesResult,
-        oneWipeDumpsResult,
+        totalWipesResult,
+        weeklyWipesTop3Result,
       ] = await Promise.all([
         supabase.rpc('dt_get_leaderboard_daily'),
         supabase.rpc('dt_get_leaderboard_weekly'),
@@ -82,7 +84,8 @@ function Leaderboard({ user, onBack }) {
         supabase.rpc('dt_get_leaderboard_avg_per_day'),
         supabase.rpc('dt_get_leaderboard_distinct_locations'),
         supabase.rpc('dt_get_leaderboard_max_wipes'),
-        supabase.rpc('dt_get_leaderboard_one_wipe_dumps'),
+        supabase.rpc('dt_get_leaderboard_total_wipes'),
+        supabase.rpc('dt_get_leaderboard_weekly_wipes_top3'),
       ])
 
       if (dailyResult.error) throw dailyResult.error
@@ -97,7 +100,8 @@ function Leaderboard({ user, onBack }) {
       if (avgPerDayResult.error) throw avgPerDayResult.error
       if (distinctLocationsResult.error) throw distinctLocationsResult.error
       if (maxWipesResult.error) throw maxWipesResult.error
-      if (oneWipeDumpsResult.error) throw oneWipeDumpsResult.error
+      if (totalWipesResult.error) throw totalWipesResult.error
+      if (weeklyWipesTop3Result.error) throw weeklyWipesTop3Result.error
 
       setDailyStats(dailyResult.data || [])
       setWeeklyStats(weeklyResult.data || [])
@@ -111,7 +115,8 @@ function Leaderboard({ user, onBack }) {
       setAvgPerDayRecords(avgPerDayResult.data || [])
       setDistinctLocationsRecords(distinctLocationsResult.data || [])
       setMaxWipesRecords(maxWipesResult.data || [])
-      setOneWipeDumpsRecords(oneWipeDumpsResult.data || [])
+      setTotalWipesRecords(totalWipesResult.data || [])
+      setWeeklyWipesTop3(weeklyWipesTop3Result.data || [])
     } catch (err) {
       console.error('Error fetching leaderboard data:', err)
       setError(err.message || 'Failed to load leaderboard')
@@ -346,6 +351,29 @@ function Leaderboard({ user, onBack }) {
           )}
         </div>
 
+        {/* Most Wipes This Week */}
+        <div className="leaderboard-section">
+          <h2>🧻 Most Wipes This Week</h2>
+          <p className="leaderboard-description">Who's logging the most wipes this week?</p>
+          {weeklyWipesTop3.length === 0 ? (
+            <div className="empty-leaderboard">No wipes recorded this week</div>
+          ) : (
+            <div className="leaderboard-list">
+              {weeklyWipesTop3.map((record, index) => (
+                <div key={record.user_id} className="leaderboard-item">
+                  <div className="rank-badge">{index + 1}</div>
+                  <div className="leaderboard-info">
+                    <div className="leaderboard-name">{formatName(record.first_name, record.last_name)}</div>
+                    <div className="leaderboard-count">
+                      {record.weekly_wipes} {record.weekly_wipes === 1 ? 'wipe' : 'wipes'} this week
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
         {/* Records Section */}
         <div className="leaderboard-section records-section">
           <h2>🏅 Records</h2>
@@ -446,17 +474,17 @@ function Leaderboard({ user, onBack }) {
           </div>
 
           <div className="record-category">
-            <h3>✨ Most 1-Wipe Dumps</h3>
-            <p className="record-description">One wipe and done. These masters have logged the most single-wipe dumps. The dream.</p>
-            {oneWipeDumpsRecords.length === 0 ? (
-              <div className="empty-leaderboard">No 1-wipe dumps recorded</div>
+            <h3>🧻 Most Total Wipes</h3>
+            <p className="record-description">The highest total wipes logged. These champions have tracked every wipe—no stone unturned.</p>
+            {totalWipesRecords.length === 0 ? (
+              <div className="empty-leaderboard">No wipes recorded</div>
             ) : (
               <div className="leaderboard-list records-list single-day-tied">
-                {oneWipeDumpsRecords.map((record) => (
+                {totalWipesRecords.map((record) => (
                   <div key={record.user_id} className="leaderboard-item">
                     <div className="leaderboard-info">
                       <div className="leaderboard-name">{formatName(record.first_name, record.last_name)}</div>
-                      <div className="leaderboard-count">{record.one_wipe_count} {record.one_wipe_count === 1 ? '1-wipe dump' : '1-wipe dumps'}</div>
+                      <div className="leaderboard-count">{record.total_wipes} {record.total_wipes === 1 ? 'wipe' : 'wipes'} total</div>
                     </div>
                   </div>
                 ))}

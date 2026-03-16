@@ -106,6 +106,18 @@
   padding: 0 5px;
 }
 
+.leaderboard-subsection {
+  padding-top: 16px;
+  border-top: 1px solid #e9ecef;
+}
+
+.leaderboard-subsection-title {
+  color: #667eea;
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+
 .leaderboard-list {
   display: flex;
   flex-direction: column;

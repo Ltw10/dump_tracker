@@ -786,45 +786,73 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Most 1-wipe dumps (count of entries where wipes = 1)
-CREATE OR REPLACE FUNCTION dt_get_leaderboard_one_wipe_dumps()
+-- Most total wipes (sum of wipes across all entries, record = highest total)
+CREATE OR REPLACE FUNCTION dt_get_leaderboard_total_wipes()
 RETURNS TABLE (
   user_id UUID,
   first_name TEXT,
   last_name TEXT,
-  one_wipe_count BIGINT
+  total_wipes BIGINT
 ) AS $$
 BEGIN
   RETURN QUERY
-  WITH one_wipe_counts AS (
+  WITH user_totals AS (
     SELECT
-      u.id AS user_id,
-      u.first_name,
-      u.last_name,
-      COUNT(de.id)::BIGINT AS one_wipe_count
-    FROM dt_users u
-    INNER JOIN dt_entries de ON de.user_id = u.id
+      de.user_id,
+      SUM(COALESCE(de.wipes, 0))::BIGINT AS total_wipes
+    FROM dt_entries de
+    INNER JOIN dt_users u ON u.id = de.user_id
     WHERE u.leaderboard_opt_in = TRUE
       AND u.first_name IS NOT NULL
       AND u.last_name IS NOT NULL
       AND TRIM(COALESCE(u.first_name, '')) != ''
       AND TRIM(COALESCE(u.last_name, '')) != ''
-      AND de.wipes = 1
-    GROUP BY u.id, u.first_name, u.last_name
-    HAVING COUNT(de.id) > 0
+    GROUP BY de.user_id
+    HAVING SUM(COALESCE(de.wipes, 0)) > 0
   ),
-  top_count AS (
-    SELECT COALESCE(MAX(owc2.one_wipe_count), 0) AS highest FROM one_wipe_counts owc2
+  global_max AS (
+    SELECT COALESCE(MAX(ut.total_wipes), 0) AS m FROM user_totals ut
   )
   SELECT
-    owc.user_id,
-    owc.first_name,
-    owc.last_name,
-    owc.one_wipe_count
-  FROM one_wipe_counts owc
-  CROSS JOIN top_count tc
-  WHERE tc.highest > 0 AND owc.one_wipe_count = tc.highest
-  ORDER BY owc.one_wipe_count DESC, owc.first_name, owc.last_name;
+    u.id,
+    u.first_name,
+    u.last_name,
+    ut.total_wipes
+  FROM dt_users u
+  INNER JOIN user_totals ut ON ut.user_id = u.id
+  CROSS JOIN global_max gm
+  WHERE gm.m > 0 AND ut.total_wipes = gm.m
+  ORDER BY ut.total_wipes DESC, u.first_name, u.last_name;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Top 3 in wipes for the current week (EST)
+CREATE OR REPLACE FUNCTION dt_get_leaderboard_weekly_wipes_top3()
+RETURNS TABLE (
+  user_id UUID,
+  first_name TEXT,
+  last_name TEXT,
+  weekly_wipes BIGINT
+) AS $$
+BEGIN
+  RETURN QUERY
+  SELECT
+    u.id AS user_id,
+    u.first_name,
+    u.last_name,
+    SUM(COALESCE(de.wipes, 0))::BIGINT AS weekly_wipes
+  FROM dt_users u
+  INNER JOIN dt_entries de ON de.user_id = u.id
+  WHERE u.leaderboard_opt_in = TRUE
+    AND u.first_name IS NOT NULL
+    AND u.last_name IS NOT NULL
+    AND TRIM(COALESCE(u.first_name, '')) != ''
+    AND TRIM(COALESCE(u.last_name, '')) != ''
+    AND de.created_at >= DATE_TRUNC('week', (CURRENT_TIMESTAMP AT TIME ZONE 'America/New_York')::DATE) AT TIME ZONE 'America/New_York'
+  GROUP BY u.id, u.first_name, u.last_name
+  HAVING SUM(COALESCE(de.wipes, 0)) > 0
+  ORDER BY weekly_wipes DESC
+  LIMIT 3;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
@@ -1008,7 +1036,8 @@ GRANT EXECUTE ON FUNCTION dt_get_leaderboard_messy_dumps() TO authenticated;
 GRANT EXECUTE ON FUNCTION dt_get_leaderboard_liquid_dumps() TO authenticated;
 GRANT EXECUTE ON FUNCTION dt_get_leaderboard_explosive_dumps() TO authenticated;
 GRANT EXECUTE ON FUNCTION dt_get_leaderboard_max_wipes() TO authenticated;
-GRANT EXECUTE ON FUNCTION dt_get_leaderboard_one_wipe_dumps() TO authenticated;
+GRANT EXECUTE ON FUNCTION dt_get_leaderboard_total_wipes() TO authenticated;
+GRANT EXECUTE ON FUNCTION dt_get_leaderboard_weekly_wipes_top3() TO authenticated;
 GRANT EXECUTE ON FUNCTION dt_get_leaderboard_single_day_record() TO authenticated;
 GRANT EXECUTE ON FUNCTION dt_get_leaderboard_single_location_record() TO authenticated;
 GRANT EXECUTE ON FUNCTION dt_get_leaderboard_avg_per_day() TO authenticated;
