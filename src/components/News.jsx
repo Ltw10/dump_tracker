@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import gio100Image from '../assets/gio_100_dump.jpeg'
+import lukeTpIssueImage from '../assets/luke_empty_toilet_paper_issue.jpeg'
 import './News.css'
 
 // Stats for the Gio 100 article — fixed as of February 12, 2026 (do not update)
@@ -16,6 +17,35 @@ function News({ user, onBack }) {
   const gioStats = GIO_100_ARTICLE_STATS_AS_OF_FEB_12
 
   const articles = [
+    {
+      id: 'luke-155-toilet-paper-catastrophe',
+      title: "🧻 Luke's 155th Dump Ends in Toilet Paper Catastrophe",
+      author: 'Dump Tracker News',
+      date: 'April 1, 2026',
+      content: (
+        <article className="news-article-body">
+          <p>
+            What looked like an average morning quickly turned into a full-blown emergency for <strong>Luke</strong> during his first dump of the day, which also happened to be his <strong>155th logged dump</strong>.
+          </p>
+          <figure className="news-article-figure">
+            <img src={lukeTpIssueImage} alt="Empty toilet paper holder found during Luke's 155th dump" />
+            <figcaption>The scene of the crime: an empty toilet paper rack before the morning mission.</figcaption>
+          </figure>
+          <p>
+            Luke entered the bathroom expecting business as usual, but was met with catastrophe at the finish line: Taylor had left the toilet paper rack empty. With no roll in reach and no margin for error, the operation went from routine to survival mode in seconds.
+          </p>
+          <p>
+            The only backup rolls were located in the laundry room. That meant one option: a full <strong>penguin walk, cheeks out</strong>, across the house to secure ammunition and return to base so the job could be completed.
+          </p>
+          <p>
+            Given the timing, Luke briefly wondered if this was a cruel April Fools prank before committing to the emergency supply run.
+          </p>
+          <p>
+            It was a very unexpected start to what seemed like an average morning. Luke still got it done with an <strong>8-wipe classic dump</strong>, but not without adversity, tactical movement, and a reminder to always check inventory before launch.
+          </p>
+        </article>
+      ),
+    },
     {
       id: 'gio-100-dumps',
       title: '🎉 Giovanni Caracciolo Hits 100 Dumps',
