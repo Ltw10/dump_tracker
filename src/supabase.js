@@ -26,4 +26,7 @@ if (!supabaseAnonKey || supabaseAnonKey === "YOUR_SUPABASE_ANON_KEY") {
   );
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+/** App tables, RPCs, and triggers live in schema dump_tracker (see db/supabase-schema.sql). */
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  db: { schema: "dump_tracker" },
+});

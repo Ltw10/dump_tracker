@@ -29,11 +29,12 @@ npm install
 
 1. Create a new project at [supabase.com](https://supabase.com)
 2. Go to the SQL Editor in your Supabase dashboard
-3. Run the SQL from `db/supabase-schema.sql` to create the tables and set up Row Level Security
-4. **Important**: If you're setting up an existing database or need to fix RLS issues, also run the relevant migration(s) from the `db/` folder (e.g. migrations for RLS fixes or user-existence functions).
-5. Go to Settings > API to get your project URL and anon key
-6. Enable email authentication in Authentication > Providers > Email
-7. **Configure Redirect URLs** (Important for email verification):
+3. Run the SQL from `db/supabase-schema.sql` to create schema **`dump_tracker`**, tables, functions, triggers, Row Level Security, and grants
+4. In **Project Settings → API → Exposed schemas**, add **`dump_tracker`** so PostgREST can serve this app’s tables and RPCs (you can keep `public` if other apps use it)
+5. **Existing database** (tables still in `public`): Run `db/migration-move-to-dump-tracker-schema.sql` once, then run the **full** `db/supabase-schema.sql` again so functions and triggers are recreated in `dump_tracker`. Take a backup first if the data matters
+6. Go to Settings > API to get your project URL and anon key
+7. Enable email authentication in Authentication > Providers > Email
+8. **Configure Redirect URLs** (Important for email verification):
    - Go to Authentication > URL Configuration
    - Add your site URLs to "Redirect URLs":
      - For local development: `http://localhost:5173` (or your Vite dev port)
@@ -56,10 +57,10 @@ npm install
 
 ### 4. Database Setup Details
 
-The database uses triggers and functions to automatically handle user creation:
-- A trigger automatically creates a `users` record when someone signs up via Supabase Auth
-- The `ensure_user_exists()` function can be called to ensure user records exist (useful for existing users)
-- All database functions run with `SECURITY DEFINER` to bypass RLS when needed
+The database uses triggers and functions under schema **`dump_tracker`**:
+- A trigger on `auth.users` creates a `dt_users` row on signup
+- The `dt_ensure_user_exists` RPC can be called from the client if a profile row was missed
+- Sensitive helpers use `SECURITY DEFINER` with a fixed `search_path` where they need to read or write across roles
 
 ### 5. Run the Development Server
 
@@ -95,20 +96,20 @@ The app will be available at `http://localhost:5173` (or the port Vite assigns).
 
 ## Database Schema
 
-All Dump Tracker objects use the **`dt_`** prefix so the app can share a database with other projects.
+All Dump Tracker tables, functions, triggers, and policies live in the PostgreSQL schema **`dump_tracker`** (namespace separation from `public` and other apps). Object names still use the **`dt_`** prefix.
 
 - **dt_users** – App user profile (id matches `auth.users`), `leaderboard_opt_in`, `location_tracking_opt_in`, name
 - **dt_locations** – One row per user per location: `location_name`, `count`, optional `address` / `latitude` / `longitude`
 - **dt_entries** – One row per logged dump: `location_id` → `dt_locations`, flags for `ghost_wipe`, `messy_dump`, `classic_dump`, `liquid_dump`, `explosive_dump`; used for decrement and leaderboards
 - **dt_notifications** – Feed rows: `type`, `actor_user_id`, `payload` (JSON), created by triggers on insert into `dt_entries`
 
-RPCs: `dt_ensure_user_exists`, `dt_get_notifications`, `dt_get_leaderboard_*`. See `db/supabase-schema.sql` and `db/migration-dump-tracker-prefix.sql` for existing DBs.
+RPCs: `dt_ensure_user_exists`, `dt_get_notifications`, `dt_get_leaderboard_*`. See `db/supabase-schema.sql`. Moving an older `public` install: `db/migration-move-to-dump-tracker-schema.sql` then full schema SQL again.
 
 ### Key Database Behavior
 
-- **RLS**: Users can only access their own `dumps` and `dump_entries`; notifications are read via RPC for opted-in users.
-- **Triggers**: User creation on signup; `dumps.count` synced from `dump_entries`; notifications for first dump at location, every 50 at a location, yearly milestones (e.g. 10th ghost wipe, 100th total), single-day record.
-- **RPCs**: e.g. `get_notifications`, `ensure_user_exists`, leaderboard functions for total and each specialty. Schema and migrations live in `db/` (see [AGENTS.md](AGENTS.md) for conventions).
+- **RLS**: Users can only access their own `dt_locations` / `dt_entries` rows; `dt_notifications` are read via RPC for opted-in users.
+- **Triggers**: Profile row on signup; `dt_locations.count` synced from `dt_entries`; notifications for first dump at a location, every 50 at a location, yearly milestones, single-day record, wipes milestones.
+- **RPCs**: Leaderboard and notification feeds plus `dt_ensure_user_exists`. Schema and migrations live in `db/` (see [AGENTS.md](AGENTS.md) for conventions).
 
 ## Build for Production
 
@@ -230,8 +231,9 @@ dump_tracker/
 │   ├── main.jsx
 │   └── index.css
 ├── db/
-│   ├── supabase-schema.sql     # Full schema (tables, RLS, triggers, RPCs)
-│   └── migration-*.sql          # Per-feature migrations (run in Supabase SQL Editor)
+│   ├── supabase-schema.sql              # Full schema in PostgreSQL schema dump_tracker
+│   ├── migration-move-to-dump-tracker-schema.sql  # Move existing public.* tables into dump_tracker (then re-run full schema)
+│   └── migration-*.sql                  # Other migrations (Supabase SQL Editor)
 ├── public/                     # PWA manifest, icons
 ├── .github/workflows/          # e.g. GitHub Pages deploy
 └── package.json
@@ -240,11 +242,14 @@ dump_tracker/
 ## Troubleshooting
 
 ### "new row violates row-level security policy" error
-- Run the relevant RLS migration from the `db/` folder to set up the user creation trigger
+- Confirm **Exposed schemas** includes `dump_tracker` and you deployed a build that uses `db.schema` in `src/supabase.js`
+- Re-run `db/supabase-schema.sql` if policies are missing
 
-### "foreign key constraint" error when creating dumps
-- Run the relevant migration from `db/` that adds the `ensure_user_exists()` function
-- The app will automatically call this function, but you can also call it manually via RPC
+### "foreign key constraint" or missing profile row
+- Ensure `dt_ensure_user_exists` exists and the app can call it (see `db/supabase-schema.sql`)
+
+### PostgREST / empty data / 406 / schema errors
+- Dashboard → **Settings → API → Exposed schemas**: add **`dump_tracker`**
 
 ### Email verification not working
 - Check Supabase Authentication settings

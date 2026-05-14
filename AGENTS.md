@@ -23,6 +23,6 @@ Use this file when implementing new features or making changes to the codebase.
 
 ## Technical notes
 
-- **Supabase:** Auth, RLS, and RPCs are used; triggers use `SECURITY DEFINER` where they need to write outside the current user’s RLS.
+- **Supabase:** Auth, RLS, and RPCs are used; all Dump Tracker tables and functions live in the PostgreSQL schema **`dump_tracker`** (exposed in the API settings). Triggers use `SECURITY DEFINER` where they need to write outside the current user’s RLS.
 - **Frontend:** React (Vite), no router; view state is in App (e.g. `currentView`) and passed via props/callbacks.
 - **Styling:** Per-component CSS files; reuse class names and styles from similar components (e.g. modal dropdowns, list items) for consistency.
